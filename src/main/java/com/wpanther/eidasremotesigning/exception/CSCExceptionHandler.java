@@ -1,13 +1,10 @@
 package com.wpanther.eidasremotesigning.exception;
 
-import java.time.Instant;
-
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 
 import com.wpanther.eidasremotesigning.dto.csc.CSCErrorResponse;
@@ -30,7 +27,7 @@ public class CSCExceptionHandler {
     @ExceptionHandler(CertificateException.class)
     public ResponseEntity<CSCErrorResponse> handleCertificateException(CertificateException ex, WebRequest request) {
         log.error("Certificate error in CSC API", ex);
-        return createCSCErrorResponse(CSCConstants.ERROR_CREDENTIAL_NOT_FOUND, ex.getMessage(), HttpStatus.BAD_REQUEST, request);
+        return createCSCErrorResponse(CSCConstants.ERROR_CREDENTIAL_NOT_FOUND, ex.getMessage(), HttpStatus.BAD_REQUEST);
     }
 
     /**
@@ -39,7 +36,7 @@ public class CSCExceptionHandler {
     @ExceptionHandler(SigningException.class)
     public ResponseEntity<CSCErrorResponse> handleSigningException(SigningException ex, WebRequest request) {
         log.error("Signing error in CSC API", ex);
-        return createCSCErrorResponse(CSCConstants.ERROR_SIGNING_ERROR, ex.getMessage(), HttpStatus.BAD_REQUEST, request);
+        return createCSCErrorResponse(CSCConstants.ERROR_SIGNING_ERROR, ex.getMessage(), HttpStatus.BAD_REQUEST);
     }
 
     /**
@@ -49,7 +46,7 @@ public class CSCExceptionHandler {
     public ResponseEntity<CSCErrorResponse> handleClientRegistrationException(
             ClientRegistrationException ex, WebRequest request) {
         log.error("Client registration error in CSC API", ex);
-        return createCSCErrorResponse(CSCConstants.ERROR_INVALID_REQUEST, ex.getMessage(), HttpStatus.BAD_REQUEST, request);
+        return createCSCErrorResponse(CSCConstants.ERROR_INVALID_REQUEST, ex.getMessage(), HttpStatus.BAD_REQUEST);
     }
 
     /**
@@ -61,26 +58,20 @@ public class CSCExceptionHandler {
         return createCSCErrorResponse(
                 CSCConstants.ERROR_UNSUPPORTED_OPERATION,
                 "An unexpected error occurred: " + ex.getMessage(),
-                HttpStatus.INTERNAL_SERVER_ERROR, 
-                request);
+                HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
     /**
      * Creates a CSC API error response
      */
     private ResponseEntity<CSCErrorResponse> createCSCErrorResponse(
-            String error, String message, HttpStatus status, WebRequest request) {
-        
-        String path = ((ServletWebRequest)request).getRequest().getRequestURI();
-        
+            String error, String message, HttpStatus status) {
+
         CSCErrorResponse errorResponse = CSCErrorResponse.builder()
                 .error(error)
-                .message(message)
-                .status(status.value())
-                .path(path)
-                .timestamp(Instant.now().toEpochMilli())
+                .errorDescription(message)
                 .build();
-        
+
         return new ResponseEntity<>(errorResponse, status);
     }
 }

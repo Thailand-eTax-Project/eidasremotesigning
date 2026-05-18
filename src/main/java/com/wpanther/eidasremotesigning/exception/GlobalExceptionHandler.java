@@ -38,10 +38,7 @@ public class GlobalExceptionHandler {
         if (path.startsWith("/csc/v2/")) {
             CSCErrorResponse errorResponse = CSCErrorResponse.builder()
                     .error("invalid_request")
-                    .message("Request method '" + ex.getMethod() + "' is not supported")
-                    .status(HttpStatus.METHOD_NOT_ALLOWED.value())
-                    .path(path)
-                    .timestamp(Instant.now().toEpochMilli())
+                    .errorDescription("Request method '" + ex.getMethod() + "' is not supported")
                     .build();
             return new ResponseEntity<>(errorResponse, HttpStatus.METHOD_NOT_ALLOWED);
         }
@@ -108,10 +105,7 @@ public class GlobalExceptionHandler {
         if (path.startsWith("/csc/v2/")) {
             CSCErrorResponse errorResponse = CSCErrorResponse.builder()
                     .error("server.error")
-                    .message("An unexpected error occurred: " + ex.getMessage())
-                    .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
-                    .path(path)
-                    .timestamp(Instant.now().toEpochMilli())
+                    .errorDescription("An unexpected error occurred: " + ex.getMessage())
                     .build();
             
             return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
