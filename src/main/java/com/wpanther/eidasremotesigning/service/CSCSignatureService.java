@@ -290,8 +290,7 @@ public class CSCSignatureService {
                     String jcaSigAlgo = OIDMapper.toJcaSigAlgo(signAlgoOid);
 
                     // Determine hash algorithm from signAlgo
-                    String hashAlgo = OIDMapper.toJcaHashAlgo(
-                            OIDMapper.toJcaHashAlgoForSig(signAlgoOid));
+                    String hashAlgo = OIDMapper.toJcaHashAlgoForSig(signAlgoOid);
 
                     // Decode document
                     byte[] documentBytes = Base64.getDecoder().decode(entry.getDocument());
@@ -347,6 +346,7 @@ public class CSCSignatureService {
                 // Return response for full document signing (signature embedded by EU DSS)
                 return CSCSignDocumentResponse.builder()
                         .documentWithSignature(signedDocuments)
+                        .responseID(UUID.randomUUID().toString())
                         .build();
 
             } else {

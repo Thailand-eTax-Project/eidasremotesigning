@@ -105,12 +105,14 @@ public class CSCAuthorizationService {
                     .expiresIn(validityPeriod)
                     .build();
             
+        } catch (CertificateException | SigningException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Failed to authorize credential", e);
             throw new SigningException("Failed to authorize credential: " + e.getMessage(), e);
         }
     }
-    
+
     /**
      * Extends the validity period of a transaction
      */
