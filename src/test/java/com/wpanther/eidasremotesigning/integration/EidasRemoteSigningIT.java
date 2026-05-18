@@ -128,4 +128,40 @@ public class EidasRemoteSigningIT {
                 System.out.println("Generated OAuth token successfully");
         }
 
+        /**
+         * Test CSC API /info endpoint
+         */
+        @Test
+        @Order(3)
+        public void testServiceInfo() throws Exception {
+                MvcResult result = mockMvc.perform(MockMvcRequestBuilders
+                                .get("/csc/v2/info"))
+                                .andExpect(status().isOk())
+                                .andReturn();
+
+                JsonNode json = objectMapper.readTree(result.getResponse().getContentAsString());
+
+                // Assert specs field
+                assertTrue(json.has("specs"), "Response must include specs field");
+                assertEquals("2.0.0.0", json.get("specs").asText());
+
+                // Assert authType is a JSON array of strings
+                assertTrue(json.has("authType"), "Response must include authType field");
+                assertTrue(json.get("authType").isArray(), "authType must be an array");
+                assertEquals(1, json.get("authType").size());
+                assertEquals("oauth2code", json.get("authType").get(0).asText());
+
+                // Assert methods list includes key endpoints
+                assertTrue(json.has("methods"), "Response must include methods field");
+                assertTrue(json.get("methods").isArray(), "methods must be an array");
+
+                String methodsText = json.get("methods").toString();
+                assertTrue(methodsText.contains("credentials/authorizeStatus"),
+                                "methods must include credentials/authorizeStatus");
+                assertTrue(methodsText.contains("signatures/validate"),
+                                "methods must include signatures/validate");
+
+                System.out.println("CSC /info endpoint validated successfully");
+        }
+
 }
