@@ -133,24 +133,24 @@ The service implements the following CSC API v2.0 endpoints:
 #### Information and Service Discovery
 | Endpoint | Purpose |
 |----------|---------|
-| GET /csc/v2/info | Get service information |
+| POST /csc/v2/info | Get service information (required fields: `signAlgorithms`, `signature_formats`, `conformance_levels`, `oauth2`) |
 
 #### Credential Management
 | Endpoint | Purpose |
 |----------|---------|
 | POST /csc/v2/credentials/list | List available certificates |
-| POST /csc/v2/credentials/info | Get certificate details |
+| POST /csc/v2/credentials/info | Get certificate details (returns `auth` object with `mode`, `expression`, `objects[]`) |
 | POST /csc/v2/credentials/associate | Associate a certificate |
-| POST /csc/v2/credentials/authorize | Authorize a credential for signing |
-| POST /csc/v2/credentials/authorizeStatus | Check authorization status |
+| POST /csc/v2/credentials/authorize | Authorize a credential for signing (request: `hashes[]`, `hashAlgorithmOID`, `authData[]`; async response: `handle`) |
+| POST /csc/v2/credentials/authorizeCheck | Check authorization status (request: `handle`) |
 | POST /csc/v2/credentials/extendTransaction | Extend authorization validity |
 
 #### Signing Operations
 | Endpoint | Purpose |
 |----------|---------|
-| POST /csc/v2/signatures/signHash | Sign a hash value (sync/async) |
-| POST /csc/v2/signatures/signDocument | Sign a complete document (sync/async) |
-| POST /csc/v2/signatures/status | Check status of asynchronous operations |
+| POST /csc/v2/signatures/signHash | Sign a hash value (sync/async) — fields: `hashes[]`, `hashAlgorithmOID`, optional `signAlgo` |
+| POST /csc/v2/signatures/signDoc | Sign a complete document (sync/async) — uses `documents[]` or `documentDigests[]` array schema |
+| POST /csc/v2/signatures/signPolling | Poll for async operation result (request: `requestID`) |
 | POST /csc/v2/signatures/timestamp | Create a timestamp for a document or hash |
 | POST /csc/v2/signatures/validate | Validate a signature against a certificate |
 
@@ -166,7 +166,7 @@ The service implements the following CSC API v2.0 endpoints:
 curl -X POST http://localhost:9000/csc/v2/credentials/list \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-     -d '{"clientId":"your_client_id","credentials":{"pin":{"value":"1234"}}}'
+     -d '{}'
 ```
 
 ### Example: Authorize a Credential
@@ -176,17 +176,30 @@ curl -X POST http://localhost:9000/csc/v2/credentials/authorize \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
      -d '{
-           "clientId": "your_client_id",
            "credentialID": "your_certificate_id",
-           "credentials": {
-             "pin": {
-               "value": "1234"
-             }
-           },
+           "hashes": ["base64_encoded_hash"],
+           "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
+           "authData": [{"id": "PIN", "value": "1234"}],
            "numSignatures": 1,
            "validityPeriod": 900,
            "description": "Signing invoice #123"
          }'
+```
+
+**Sync response:**
+```json
+{
+  "SAD": "sad_token_value",
+  "expiresIn": 900
+}
+```
+
+**Async response (HTTP 202):**
+```json
+{
+  "handle": "async_handle_value",
+  "redirectUrl": "https://..."
+}
 ```
 
 ### Example: Sign a Hash (with PIN)
@@ -196,84 +209,73 @@ curl -X POST http://localhost:9000/csc/v2/signatures/signHash \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
      -d '{
-           "clientId": "your_client_id",
            "credentialID": "your_certificate_id",
-           "hashAlgo": "2.16.840.1.101.3.4.2.1",
-           "hash": ["base64_encoded_hash"],
+           "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
+           "hashes": ["base64_encoded_hash"],
            "operationMode": "S",
-           "credentials": {
-             "pin": {
-               "value": "1234"
-             }
-           }
-         }'
-```
-
-### Example: Sign a Hash (with SAD)
-
-Use the SAD token obtained from `/csc/v2/credentials/authorize` instead of a PIN:
-
-```bash
-curl -X POST http://localhost:9000/csc/v2/signatures/signHash \
-     -H "Content-Type: application/json" \
-     -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-     -d '{
-           "clientId": "your_client_id",
-           "credentialID": "your_certificate_id",
-           "SAD": "sad_token_from_authorize",
-           "hashAlgo": "2.16.840.1.101.3.4.2.1",
-           "hash": ["base64_encoded_hash"],
-           "operationMode": "S"
-         }'
-```
-
-### Example: Sign a Document
-
-When a Base64-encoded document is provided, the service uses the EU DSS library to produce a properly signed document (PAdES for PDF, XAdES for XML). The signed document is returned in the `signedDocument` response field.
-
-**With PIN:**
-
-```bash
-curl -X POST http://localhost:9000/csc/v2/signatures/signDocument \
-     -H "Content-Type: application/json" \
-     -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-     -d '{
-           "clientId": "your_client_id",
-           "credentialID": "your_certificate_id",
-           "document": "base64_encoded_document",
-           "hashAlgo": "2.16.840.1.101.3.4.2.1",
-           "operationMode": "S",
-           "credentials": {
-             "pin": {
-               "value": "1234"
-             }
-           }
-         }'
-```
-
-**With SAD:**
-
-```bash
-curl -X POST http://localhost:9000/csc/v2/signatures/signDocument \
-     -H "Content-Type: application/json" \
-     -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-     -d '{
-           "clientId": "your_client_id",
-           "credentialID": "your_certificate_id",
-           "SAD": "sad_token_from_authorize",
-           "document": "base64_encoded_document",
-           "hashAlgo": "2.16.840.1.101.3.4.2.1",
-           "operationMode": "S"
+           "authData": [{"id": "PIN", "value": "1234"}]
          }'
 ```
 
 **Response:**
 ```json
 {
-  "transactionID": "unique-transaction-id",
-  "signedDocument": "base64_encoded_signed_document",
-  "signedDocumentDigest": "base64_digest",
-  "signatureAlgorithm": "1.2.840.113549.1.1.11"
+  "responseID": "unique-response-id",
+  "signature": "base64_encoded_signature"
+}
+```
+
+### Example: Sign a Document
+
+When a Base64-encoded document is provided, the service uses the EU DSS library to produce a properly signed document (PAdES for PDF, XAdES for XML). The `signDoc` request uses an array-based schema where each entry specifies `signature_format` ("P" for PAdES, "X" for XAdES, "C" for CAdES, "J" for JAdES), `signAlgo`, and other parameters.
+
+**Request format:**
+```bash
+curl -X POST http://localhost:9000/csc/v2/signatures/signDoc \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+     -d '{
+           "credentialID": "your_certificate_id",
+           "documents": [{
+             "document": "base64_encoded_document",
+             "signature_format": "P",
+             "signAlgo": "1.2.840.113549.1.1.11"
+           }],
+           "operationMode": "S",
+           "authData": [{"id": "PIN", "value": "1234"}]
+         }'
+```
+
+Or for digest-based signing:
+```bash
+curl -X POST http://localhost:9000/csc/v2/signatures/signDoc \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+     -d '{
+           "credentialID": "your_certificate_id",
+           "documentDigests": [{
+             "hashes": ["base64_encoded_hash"],
+             "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
+             "signature_format": "P",
+             "signAlgo": "1.2.840.113549.1.1.11"
+           }],
+           "operationMode": "S",
+           "authData": [{"id": "PIN", "value": "1234"}]
+         }'
+```
+
+**Sync response:**
+```json
+{
+  "DocumentWithSignature": ["base64_encoded_signed_document"],
+  "SignatureObject": ["base64_detached_signature"]
+}
+```
+
+**Async response (operationMode "A"):**
+```json
+{
+  "responseID": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
@@ -284,39 +286,36 @@ For large documents or batch operations, use async signing to avoid timeouts:
 **Step 1: Submit async signing request**
 
 ```bash
-curl -X POST http://localhost:9000/csc/v2/signatures/signDocument \
+curl -X POST http://localhost:9000/csc/v2/signatures/signDoc \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
      -d '{
-           "clientId": "your_client_id",
            "credentialID": "your_certificate_id",
-           "document": "base64_encoded_large_document",
-           "hashAlgo": "2.16.840.1.101.3.4.2.1",
+           "documents": [{
+             "document": "base64_encoded_large_document",
+             "signature_format": "P",
+             "signAlgo": "1.2.840.113549.1.1.11"
+           }],
            "operationMode": "A",
-           "credentials": {
-             "pin": {
-               "value": "1234"
-             }
-           }
+           "authData": [{"id": "PIN", "value": "1234"}]
          }'
 ```
 
 **Response (immediate):**
 ```json
 {
-  "operationID": "550e8400-e29b-41d4-a716-446655440000"
+  "responseID": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
 **Step 2: Poll for operation status**
 
 ```bash
-curl -X POST http://localhost:9000/csc/v2/signatures/status \
+curl -X POST http://localhost:9000/csc/v2/signatures/signPolling \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
      -d '{
-           "clientId": "your_client_id",
-           "transactionID": "550e8400-e29b-41d4-a716-446655440000"
+           "requestID": "550e8400-e29b-41d4-a716-446655440000"
          }'
 ```
 
@@ -331,9 +330,9 @@ curl -X POST http://localhost:9000/csc/v2/signatures/status \
 ```json
 {
   "status": "COMPLETED",
-  "signedDocument": "base64_encoded_signed_document",
-  "signedDocumentDigest": "base64_digest",
-  "signatureAlgorithm": "1.2.840.113549.1.1.11"
+  "signatures": ["base64_encoded_signature"],
+  "DocumentWithSignature": ["base64_encoded_signed_document"],
+  "SignatureObject": ["base64_detached_signature"]
 }
 ```
 
@@ -350,10 +349,16 @@ curl -X POST http://localhost:9000/csc/v2/signatures/timestamp \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
      -d '{
-           "clientId": "your_client_id",
-           "documentDigest": "base64_encoded_digest",
-           "hashAlgo": "2.16.840.1.101.3.4.2.1"
+           "hash": "base64_encoded_digest",
+           "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1"
          }'
+```
+
+**Response:**
+```json
+{
+  "timestamp": "base64_encoded_rfc3161_timestamp_token"
+}
 ```
 
 ### Example: Validate a Signature
@@ -363,11 +368,10 @@ curl -X POST http://localhost:9000/csc/v2/signatures/validate \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
      -d '{
-           "clientId": "your_client_id",
            "credentialID": "your_certificate_id",
-           "hashAlgo": "2.16.840.1.101.3.4.2.1",
+           "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
            "signature": "base64_encoded_signature",
-           "documentDigest": "base64_encoded_digest",
+           "hash": "base64_encoded_digest",
            "signAlgo": "1.2.840.113549.1.1.11"
          }'
 ```
@@ -382,7 +386,7 @@ curl -X POST http://localhost:9000/csc/v2/signatures/validate \
 
 ### OID Algorithm Identifiers
 
-The CSC API v2.0 uses OID strings for algorithm fields (`hashAlgo`, `signAlgo`, `signatureAlgorithm`). Common OIDs:
+The CSC API v2.0 uses OID strings for algorithm fields (`hashAlgorithmOID`, `signAlgo`). Common OIDs:
 
 | OID | Algorithm |
 |-----|-----------|
@@ -497,6 +501,7 @@ The Docker image:
 | `AWS_KMS_ENABLED` | `false` | Enable AWS KMS backend |
 | `AWS_REGION` | `us-east-1` | AWS region for KMS |
 | `TSP_URL` | `https://freetsa.org/tsr` | RFC 3161 Timestamp Authority URL |
+| `APP_CSC_BASE_URL` | `http://localhost:9000` | CSC API base URL for `/info` `oauth2` endpoint fields |
 | `SOFTHSM_TOKEN_LABEL` | `eidas` | SoftHSM token label (Docker only) |
 | `SOFTHSM_SO_PIN` | `1234` | SoftHSM security officer PIN (Docker only) |
 | `SOFTHSM_USER_PIN` | `1234` | SoftHSM user PIN (Docker only) |
@@ -564,9 +569,9 @@ The service provides full asynchronous signing support for high-throughput envir
 **Async Signing Workflow:**
 
 1. **Submit Request**: Set `"operationMode": "A"` in any signing request
-2. **Receive Operation ID**: Server returns immediately with `operationID`
+2. **Receive Operation ID**: Server returns immediately with `responseID`
 3. **Background Processing**: Signing occurs in thread pool
-4. **Poll Status**: Use `/csc/v2/signatures/status` with the `operationID`
+4. **Poll Status**: Use `/csc/v2/signatures/signPolling` with the `responseID`
 5. **Retrieve Results**: Full signature data returned when `status: COMPLETED`
 
 **Operation Lifecycle:**
