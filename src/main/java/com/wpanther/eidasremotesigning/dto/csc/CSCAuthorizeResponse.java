@@ -16,9 +16,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class CSCAuthorizeResponse {
-    private String transactionID;
     private String SAD;
     private Long expiresIn;
-    private String authMode;
-    private String redirectUrl;
+    private String handle;
 }

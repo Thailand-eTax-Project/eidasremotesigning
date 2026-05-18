@@ -6,8 +6,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
-
 @Data
 @Builder
 @NoArgsConstructor
@@ -18,9 +16,9 @@ public class CSCInfoResponse {
     private String name;
     private String logo;
     private String region;
-    private List<String> lang;
+    private String lang;
     private String description;
-    private List<String> authType;
-    private List<String> methods;
-    private List<String> timeStampPolicies;
+    private String[] authType;
+    private String[] methods;
+    private String[] timeStampPolicies;
 }
