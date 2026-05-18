@@ -1,16 +1,12 @@
 package com.wpanther.eidasremotesigning.dto.csc;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import jakarta.validation.constraints.NotBlank;
 
-/**
- * CSC API document signing request
- * Based on CSC API v2.0 specifications
- */
 @Data
 @Builder
 @NoArgsConstructor
@@ -19,34 +15,22 @@ import jakarta.validation.constraints.NotBlank;
 public class CSCSignDocumentRequest {
     @NotBlank(message = "clientId is required")
     private String clientId;
-    
+
     private CSCBaseRequest.Credentials credentials;
-    
+
     @NotBlank(message = "credentialID is required")
     private String credentialID;
-    
+
     private String SAD;
-    
-    @NotBlank(message = "documentID is required")
-    private String documentID;
-    
-    @NotBlank(message = "documentDigest is required")
+
     private String documentDigest;
-    
+
     @NotBlank(message = "hashAlgo is required")
     private String hashAlgo;
-    
-    private SignatureAttributes signatureAttributes;
-    
+
+    private String operationMode;
+
     private SignatureOptions signatureOptions;
 
-    // Base64 encoded document for direct signing
     private String document;
-
-    /**
-     * Enable asynchronous operation mode
-     * If true, returns operationID immediately instead of waiting for signature completion
-     * Default: null (treated as false for backward compatibility)
-     */
-    private Boolean async;
 }
