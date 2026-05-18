@@ -68,8 +68,8 @@ public class CSCAuthorizationService {
                     .clientId(clientId)
                     .certificateId(credentialId)
                     .sad(sad)
-                    .numSignatures(parseNumSignatures(request.getNumSignatures()))
-                    .remainingSignatures(parseNumSignatures(request.getNumSignatures()))
+                    .numSignatures(request.getNumSignatures())
+                    .remainingSignatures(request.getNumSignatures())
                     .description(request.getDescription())
                     .status("AUTHORIZATION_INITIALIZED")
                     .createdAt(Instant.now())
@@ -295,20 +295,4 @@ public class CSCAuthorizationService {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
     }
     
-    /**
-     * Parses the numSignatures parameter from the request
-     * Returns null for unlimited signatures, or the specified number
-     */
-    private Integer parseNumSignatures(String numSignatures) {
-        if (numSignatures == null || numSignatures.isEmpty()) {
-            return null; // Unlimited
-        }
-        
-        try {
-            return Integer.parseInt(numSignatures);
-        } catch (NumberFormatException e) {
-            log.warn("Invalid numSignatures value: {}", numSignatures);
-            return null; // Default to unlimited on parsing error
-        }
-    }
 }
