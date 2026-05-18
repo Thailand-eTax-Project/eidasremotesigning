@@ -619,12 +619,12 @@ public class CSCSignatureService {
             String certStatus;
             try {
                 certificate.checkValidity();
-                certStatus = "valid";
+                certStatus = CSCConstants.CERT_STATUS_VALID;
             } catch (java.security.cert.CertificateExpiredException e) {
-                certStatus = "expired";
+                certStatus = CSCConstants.CERT_STATUS_EXPIRED;
                 valid = false;
             } catch (java.security.cert.CertificateNotYetValidException e) {
-                certStatus = "expired";
+                certStatus = CSCConstants.CERT_STATUS_EXPIRED;
                 valid = false;
             }
 

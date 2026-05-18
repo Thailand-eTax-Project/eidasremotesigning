@@ -18,11 +18,26 @@ public final class CSCConstants {
     /** Credential status: enabled / active. */
     public static final String CREDENTIAL_STATUS_ENABLED = "enabled";
 
-    /** Credential status: suspended / disabled. */
+    /** Credential status: suspended. */
     public static final String CREDENTIAL_STATUS_SUSPENDED = "suspended";
+
+    /** Credential status: disabled. */
+    public static final String CREDENTIAL_STATUS_DISABLED = "disabled";
+
+    /** Certificate status: valid. */
+    public static final String CERT_STATUS_VALID = "valid";
+
+    /** Certificate status: expired or not yet valid. */
+    public static final String CERT_STATUS_EXPIRED = "expired";
+
+    /** Certificate status: revoked. */
+    public static final String CERT_STATUS_REVOKED = "revoked";
 
     /** Key status: enabled. */
     public static final String KEY_STATUS_ENABLED = "enabled";
+
+    /** Key status: disabled. */
+    public static final String KEY_STATUS_DISABLED = "disabled";
 
     /** Operation mode: synchronous. */
     public static final String OPERATION_MODE_SYNC = "S";
