@@ -19,6 +19,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.security.core.context.SecurityContextHolder;
 import java.security.PrivateKey;
 import java.security.Signature;
 import java.security.cert.X509Certificate;
@@ -82,10 +83,14 @@ public class CSCApiService {
         return pkcs11Service;
     }
 
+    private String currentClientId() {
+        return SecurityContextHolder.getContext().getAuthentication().getName();
+    }
+
     @Transactional(readOnly = true)
     public CSCCredentialsListResponse listCredentials(CSCCredentialsListRequest request) {
         try {
-            String clientId = request.getClientId();
+            String clientId = currentClientId();
             List<SigningCertificate> certificates = certificateRepository.findByClientId(clientId);
 
             List<String> credentialIds = certificates.stream()
@@ -112,7 +117,7 @@ public class CSCApiService {
     @Transactional(readOnly = true)
     public CSCCertificateInfo getCredentialInfo(CSCCredentialsInfoRequest request) {
         try {
-            String clientId = request.getClientId();
+            String clientId = currentClientId();
             String credentialID = request.getCredentialID();
             String pin = extractPinFromRequest(request);
 
@@ -174,7 +179,7 @@ public class CSCApiService {
     private CSCSignatureResponse signHashAsync(CSCSignatureRequest request) {
         // Create async operation
         AsyncOperation operation = asyncOperationService.createOperation(
-                request.getClientId(),
+                currentClientId(),
                 AsyncOperationService.TYPE_SIGN_HASH,
                 operationExpiryMinutes
         );
@@ -227,14 +232,19 @@ public class CSCApiService {
             TransactionAuthorization transaction = null;
             if (request.getSAD() != null) {
                 transaction = cscAuthorizationService.validateTransactionForSigningBySad(
-                        request.getClientId(), request.getSAD());
+                        currentClientId(), request.getSAD());
                 if (!transaction.getCertificateId().equals(credentialID)) {
                     throw new SigningException("Credential ID does not match authorized transaction");
                 }
             }
 
+            // After SAD validation, get stored PIN from transaction (if available)
+            if (pin == null || pin.isEmpty()) {
+                pin = (transaction != null) ? transaction.getStoredPin() : null;
+            }
+
             // Find the certificate (with client ownership check)
-            SigningCertificate certEntity = certificateRepository.findByIdAndClientId(credentialID, request.getClientId())
+            SigningCertificate certEntity = certificateRepository.findByIdAndClientId(credentialID, currentClientId())
                     .orElseThrow(() -> new SigningException("Certificate not found"));
 
             // Verify certificate is active
@@ -254,7 +264,7 @@ public class CSCApiService {
                         .getX509Certificate();
             } else {
                 if (pin == null || pin.isEmpty()) {
-                    throw new SigningException("PIN is required for signing with " + certEntity.getStorageType() + " token");
+                    throw new SigningException("PIN was not captured during credential authorization");
                 }
                 privateKey = certificateService.getPrivateKey(credentialID, pin);
                 certificate = certificateService.getCertificateWithX509(credentialID, pin)
@@ -452,7 +462,7 @@ public class CSCApiService {
     @Transactional
     public CSCCertificateInfo associateCertificate(CSCAssociateCertificateRequest request) {
         try {
-            String clientId = request.getClientId();
+            String clientId = currentClientId();
             String pin = extractPinFromRequest(request);
             
             if (pin == null || pin.isEmpty()) {

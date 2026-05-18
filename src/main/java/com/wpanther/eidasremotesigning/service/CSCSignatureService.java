@@ -37,6 +37,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.security.core.context.SecurityContextHolder;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.security.MessageDigest;
@@ -82,6 +83,10 @@ public class CSCSignatureService {
 
     // Cache of ongoing asynchronous signing operations
     private final Map<String, SigningOperation> ongoingOperations = new ConcurrentHashMap<>();
+
+    private String currentClientId() {
+        return SecurityContextHolder.getContext().getAuthentication().getName();
+    }
 
     public CSCSignatureService(SigningCertificateRepository certificateRepository,
                                  SigningCertificateService certificateService,
@@ -133,7 +138,7 @@ public class CSCSignatureService {
     private CSCSignDocumentResponse signDocumentAsync(CSCSignDocumentRequest request) {
         // Create async operation
         AsyncOperation operation = asyncOperationService.createOperation(
-                request.getClientId(),
+                currentClientId(),
                 AsyncOperationService.TYPE_SIGN_DOCUMENT,
                 operationExpiryMinutes
         );
@@ -169,7 +174,7 @@ public class CSCSignatureService {
      */
     private CSCSignDocumentResponse executeSignDocument(CSCSignDocumentRequest request) {
         try{
-            String clientId = request.getClientId();
+            String clientId = currentClientId();
             String credentialId = request.getCredentialID();
             String pin = extractPinFromRequest(request);
             String transactionId = UUID.randomUUID().toString();
@@ -471,8 +476,8 @@ public class CSCSignatureService {
     @Transactional(readOnly = true)
     public CSCSignatureStatusResponse getSignatureStatus(CSCSignatureStatusRequest request) {
         try {
-            String clientId = request.getClientId();
-            String operationId = request.getTransactionID();
+            String clientId = currentClientId();
+            String operationId = request.getRequestID();
 
             // Get operation (checks cache first, then DB)
             AsyncOperation operation = asyncOperationService

@@ -7,6 +7,7 @@ import com.wpanther.eidasremotesigning.exception.CertificateException;
 import com.wpanther.eidasremotesigning.exception.SigningException;
 import com.wpanther.eidasremotesigning.repository.SigningCertificateRepository;
 import com.wpanther.eidasremotesigning.repository.TransactionAuthorizationRepository;
+import org.springframework.security.core.context.SecurityContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -28,7 +29,11 @@ public class CSCAuthorizationService {
     private final SigningCertificateRepository certificateRepository;
     private final TransactionAuthorizationRepository transactionRepository;
     private final SecureRandom secureRandom;
-    
+
+    private String currentClientId() {
+        return SecurityContextHolder.getContext().getAuthentication().getName();
+    }
+
     // Default transaction validity period in seconds (15 minutes)
     private static final long DEFAULT_VALIDITY_PERIOD = 15 * 60;
     
@@ -41,7 +46,7 @@ public class CSCAuthorizationService {
     @Transactional
     public CSCAuthorizeResponse authorizeCredential(CSCAuthorizeRequest request) {
         try {
-            String clientId = request.getClientId();
+            String clientId = currentClientId();
             String credentialId = request.getCredentialID();
             
             // Verify credential exists and belongs to client
@@ -85,10 +90,9 @@ public class CSCAuthorizationService {
             
             // Build and return response
             return CSCAuthorizeResponse.builder()
-                    .transactionID(transactionId)
+                    .handle(transactionId)
                     .SAD(sad)
                     .expiresIn(validityPeriod)
-                    .authMode(authMode)
                     .build();
             
         } catch (Exception e) {
@@ -103,7 +107,7 @@ public class CSCAuthorizationService {
     @Transactional
     public CSCExtendTransactionResponse extendTransaction(CSCExtendTransactionRequest request) {
         try {
-            String clientId = request.getClientId();
+            String clientId = currentClientId();
             String transactionId = request.getTransactionID();
             
             // Find transaction
@@ -147,13 +151,12 @@ public class CSCAuthorizationService {
     @Transactional(readOnly = true)
     public CSCAuthorizeStatusResponse getAuthorizeStatus(CSCAuthorizeStatusRequest request) {
         try {
-            String clientId = request.getClientId();
-            String transactionId = request.getTransactionID();
-            
-            // Find transaction
-            TransactionAuthorization transaction = transactionRepository.findByIdAndClientId(transactionId, clientId)
+            String handle = request.getHandle();
+
+            // Find transaction by handle (no clientId needed - handle uniquely identifies the transaction)
+            TransactionAuthorization transaction = transactionRepository.findById(handle)
                     .orElseThrow(() -> new SigningException("Transaction not found"));
-            
+
             // Check expiration
             boolean isExpired = transaction.getExpiresAt().isBefore(Instant.now());
             
