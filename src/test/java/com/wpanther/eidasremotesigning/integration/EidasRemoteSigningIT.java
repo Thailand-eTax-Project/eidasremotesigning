@@ -178,6 +178,10 @@ public class EidasRemoteSigningIT {
                 String methodsText = json.get("methods").toString();
                 assertTrue(methodsText.contains("credentials/authorizeCheck"),
                                 "methods must include credentials/authorizeCheck");
+                assertTrue(methodsText.contains("signatures/signDoc"),
+                                "methods must include signatures/signDoc");
+                assertTrue(methodsText.contains("signatures/signPolling"),
+                                "methods must include signatures/signPolling");
                 assertTrue(methodsText.contains("signatures/validate"),
                                 "methods must include signatures/validate");
 
