@@ -27,7 +27,7 @@ public class CSCAuthorizationController {
     @PostMapping("/authorize")
     public ResponseEntity<CSCAuthorizeResponse> authorizeCredential(
             @Valid @RequestBody CSCAuthorizeRequest request) {
-        log.debug("CSC API: Credential authorization request from client: {}", request.getClientId());
+        log.debug("CSC API: Credential authorization request");
         
         CSCAuthorizeResponse response = cscAuthorizationService.authorizeCredential(request);
         return ResponseEntity.ok(response);
@@ -40,7 +40,7 @@ public class CSCAuthorizationController {
     @PostMapping("/extendTransaction")
     public ResponseEntity<CSCExtendTransactionResponse> extendTransaction(
             @Valid @RequestBody CSCExtendTransactionRequest request) {
-        log.debug("CSC API: Transaction extension request from client: {}", request.getClientId());
+        log.debug("CSC API: Transaction extension request");
         
         CSCExtendTransactionResponse response = cscAuthorizationService.extendTransaction(request);
         return ResponseEntity.ok(response);
@@ -53,7 +53,7 @@ public class CSCAuthorizationController {
     @PostMapping("/authorizeCheck")
     public ResponseEntity<CSCAuthorizeStatusResponse> getAuthorizeStatus(
             @Valid @RequestBody CSCAuthorizeStatusRequest request) {
-        log.debug("CSC API: Authorization status request from client: {}", request.getClientId());
+        log.debug("CSC API: Authorization status request");
         
         CSCAuthorizeStatusResponse response = cscAuthorizationService.getAuthorizeStatus(request);
         return ResponseEntity.ok(response);

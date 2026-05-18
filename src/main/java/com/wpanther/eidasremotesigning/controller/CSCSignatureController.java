@@ -29,8 +29,8 @@ public class CSCSignatureController {
     @PostMapping("/signHash")
     public ResponseEntity<CSCSignatureResponse> signHash(
             @Valid @RequestBody CSCSignatureRequest request) {
-        log.debug("CSC API: Signature request for credential: {}, client: {}", 
-                request.getCredentialID(), request.getClientId());
+        log.debug("CSC API: Signature request for credential: {}",
+                request.getCredentialID());
         
         CSCSignatureResponse response = cscApiService.signHash(request);
         return ResponseEntity.ok(response);
@@ -57,8 +57,8 @@ public class CSCSignatureController {
     @PostMapping("/signPolling")
     public ResponseEntity<CSCSignatureStatusResponse> getSignatureStatus(
             @Valid @RequestBody CSCSignatureStatusRequest request) {
-        log.debug("CSC API: Signature status request for transactionID: {}, client: {}", 
-                request.getTransactionID(), request.getClientId());
+        log.debug("CSC API: Signature status request for requestID: {}",
+                request.getRequestID());
         
         CSCSignatureStatusResponse response = cscSignatureService.getSignatureStatus(request);
         return ResponseEntity.ok(response);
@@ -71,7 +71,7 @@ public class CSCSignatureController {
     @PostMapping("/timestamp")
     public ResponseEntity<CSCTimestampResponse> createTimestamp(
             @Valid @RequestBody CSCTimestampRequest request) {
-        log.debug("CSC API: Timestamp request from client: {}", request.getClientId());
+        log.debug("CSC API: Timestamp request");
 
         CSCTimestampResponse response = cscSignatureService.createTimestamp(request);
         return ResponseEntity.ok(response);
@@ -83,7 +83,7 @@ public class CSCSignatureController {
     @PostMapping("/validate")
     public ResponseEntity<CSCVerifyResponse> validateSignature(
             @Valid @RequestBody CSCVerifyRequest request) {
-        log.debug("CSC API: Signature validation request from client: {}", request.getClientId());
+        log.debug("CSC API: Signature validation request");
 
         CSCVerifyResponse response = cscSignatureService.validateSignature(request);
         return ResponseEntity.ok(response);

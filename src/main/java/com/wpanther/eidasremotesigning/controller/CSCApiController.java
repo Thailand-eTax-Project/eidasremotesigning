@@ -36,10 +36,10 @@ public class CSCApiController {
                 .specs(CSCConstants.SPECS_VERSION)
                 .name("eIDAS Remote Signing Service")
                 .region("EU")
-                .lang(List.of("en"))
+                .lang("en")
                 .description("eIDAS compliant remote signing service supporting PKCS#11 hardware tokens, AWS KMS, and BCFKS keystores with asynchronous operation support")
-                .authType(List.of(CSCConstants.AUTH_TYPE_OAUTH2_CODE))
-                .methods(List.of(
+                .authType(new String[]{CSCConstants.AUTH_TYPE_OAUTH2_CODE})
+                .methods(new String[]{
                         "credentials/list",
                         "credentials/info",
                         "credentials/authorize",
@@ -50,7 +50,7 @@ public class CSCApiController {
                         "signatures/timestamp",
                         "signatures/signPolling",
                         "signatures/validate"
-                ))
+                })
                 .build();
 
         return ResponseEntity.ok(response);
@@ -62,7 +62,7 @@ public class CSCApiController {
     @PostMapping("/credentials/list")
     public ResponseEntity<CSCCredentialsListResponse> listCredentials(
             @Valid @RequestBody CSCCredentialsListRequest request) {
-        log.debug("CSC API: Request for credentials list from client: {}", request.getClientId());
+        log.debug("CSC API: Request for credentials list");
         
         CSCCredentialsListResponse response = cscApiService.listCredentials(request);
         return ResponseEntity.ok(response);
@@ -71,8 +71,8 @@ public class CSCApiController {
     @PostMapping("/credentials/info")
     public ResponseEntity<CSCCertificateInfo> getCredentialInfo(
             @Valid @RequestBody CSCCredentialsInfoRequest request) {
-        log.debug("CSC API: Request for credential info, ID: {}, client: {}",
-                request.getCredentialID(), request.getClientId());
+        log.debug("CSC API: Request for credential info, ID: {}",
+                request.getCredentialID());
 
         CSCCertificateInfo response = cscApiService.getCredentialInfo(request);
         return ResponseEntity.ok(response);
@@ -81,8 +81,8 @@ public class CSCApiController {
     @PostMapping("/credentials/associate")
 public ResponseEntity<CSCCertificateInfo> associateCertificate(
         @Valid @RequestBody CSCAssociateCertificateRequest request) {
-    log.debug("CSC API: Request to associate certificate with alias: {}, client: {}", 
-            request.getCertificateAlias(), request.getClientId());
+    log.debug("CSC API: Request to associate certificate with alias: {}",
+            request.getCertificateAlias());
     
     CSCCertificateInfo response = cscApiService.associateCertificate(request);
     return ResponseEntity.created(URI.create("/csc/v2/credentials/info?credentialID=" + response.getCredentialID()))

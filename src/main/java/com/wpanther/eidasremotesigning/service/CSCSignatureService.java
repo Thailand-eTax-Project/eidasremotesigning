@@ -541,16 +541,16 @@ public class CSCSignatureService {
             byte[] digestBytes;
             
             // Either document or digest must be provided
-            if (request.getDocumentDigest() != null) {
-                // Use provided digest
-                digestBytes = Base64.getDecoder().decode(request.getDocumentDigest());
-            } else if (request.getDocument() != null) {
+            if (request.getHash() != null) {
+                // Use provided hash
+                digestBytes = Base64.getDecoder().decode(request.getHash());
+            } else if (request.getNonce() != null) {
                 // Calculate digest from document
-                byte[] documentBytes = Base64.getDecoder().decode(request.getDocument());
+                byte[] documentBytes = Base64.getDecoder().decode(request.getNonce());
                 MessageDigest digest = MessageDigest.getInstance(hashAlgo);
                 digestBytes = digest.digest(documentBytes);
             } else {
-                throw new SigningException("Either document or documentDigest must be provided");
+                throw new SigningException("Either hash or nonce must be provided");
             }
             
             // Create TSP source
