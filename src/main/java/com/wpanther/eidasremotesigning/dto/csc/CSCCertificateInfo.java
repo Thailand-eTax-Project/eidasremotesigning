@@ -6,52 +6,49 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.Map;
-
-/**
- * CSC API certificate info response
- * Based on CSC API v2.0 specifications
- */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class CSCCertificateInfo {
-    private String id;
+    private String credentialID;
+    private String description;
     private String status;
     private CSCCertificateDetails cert;
     private CSCKeyInfo key;
     private String authMode;
-    private Map<String, Object> scal;
+    private String scal;
+    private Integer multisign;
     private CSCPINInfo pin;
     private CSCOTPInfo otp;
-    
+
     @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
     public static class CSCCertificateDetails {
-        private String subject;
+        private String subjectDN;
         private String issuerDN;
         private String serialNumber;
         private String[] policies;
         private String[] keyUsage;
-        private Long validFrom;
-        private Long validTo;
-        private String certificate; // Base64 encoded certificate
+        private String validFrom;
+        private String validTo;
+        private String[] certificates;
     }
-    
+
     @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
     public static class CSCKeyInfo {
-        private String algo;
-        private Integer length;
+        private String status;
+        private String[] algo;
+        private Integer len;
         private String[] curveIds;
     }
-    
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -62,7 +59,7 @@ public class CSCCertificateInfo {
         private String label;
         private String description;
     }
-    
+
     @Data
     @Builder
     @NoArgsConstructor
