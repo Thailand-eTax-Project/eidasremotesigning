@@ -265,7 +265,7 @@ public class CSCSignatureService {
             } else {
                 keyAlgoForSig = privateKey.getAlgorithm();
             }
-            String signatureAlgorithm = determineSignatureAlgorithm(keyAlgoForSig, hashAlgo);
+            String signatureAlgorithm = OIDMapper.deriveJcaSigAlgo(keyAlgoForSig, hashAlgo);
 
             // For document signing, we need to check if the document is provided or just the digest
             boolean isDocumentProvided = request.getDocument() != null && !request.getDocument().isEmpty();
@@ -659,45 +659,7 @@ public class CSCSignatureService {
                 throw new SigningException("Unsupported hash algorithm for timestamping: " + hashAlgo);
         }
     }
-    
 
-
-    /**
-     * Determines the appropriate signature algorithm based on key and digest algorithms
-     */
-    private String determineSignatureAlgorithm(String keyAlgorithm, String digestAlgorithm) {
-        // Normalize input
-        keyAlgorithm = keyAlgorithm.toUpperCase();
-        digestAlgorithm = digestAlgorithm.toUpperCase();
-        
-        // Map to standard JCA signature algorithm identifiers
-        if (keyAlgorithm.equals("RSA")) {
-            switch (digestAlgorithm) {
-                case "SHA-256":
-                    return "SHA256withRSA";
-                case "SHA-384":
-                    return "SHA384withRSA";
-                case "SHA-512":
-                    return "SHA512withRSA";
-                default:
-                    throw new SigningException("Unsupported digest algorithm for RSA: " + digestAlgorithm);
-            }
-        } else if (keyAlgorithm.equals("EC")) {
-            switch (digestAlgorithm) {
-                case "SHA-256":
-                    return "SHA256withECDSA";
-                case "SHA-384":
-                    return "SHA384withECDSA";
-                case "SHA-512":
-                    return "SHA512withECDSA";
-                default:
-                    throw new SigningException("Unsupported digest algorithm for ECDSA: " + digestAlgorithm);
-            }
-        } else {
-            throw new SigningException("Unsupported key algorithm: " + keyAlgorithm);
-        }
-    }
-    
     /**
      * Extracts PIN from CSC request
      */

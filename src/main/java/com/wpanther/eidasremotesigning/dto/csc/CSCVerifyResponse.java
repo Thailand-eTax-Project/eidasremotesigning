@@ -21,6 +21,6 @@ public class CSCVerifyResponse {
     private String[] certificateStatusDetails;
     private String[] signatureStatusDetails;
     private String signatureType;
-    private Long signingTime;
+    private String signingTime;
     private String signedBy;
 }

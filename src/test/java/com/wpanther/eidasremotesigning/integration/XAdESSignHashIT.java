@@ -224,6 +224,12 @@ public class XAdESSignHashIT {
         assertEquals(1, signaturesNode.size(), "exactly one signature expected");
         signature = signaturesNode.get(0).asText();
         assertFalse(signature.isBlank(), "signature value must not be blank");
+
+        // Verify CSC v2.0 wire format: signatureAlgorithm is OID, no certificate field
+        String sigAlgoOid = json.get("signatureAlgorithm").asText();
+        assertTrue(sigAlgoOid.startsWith("1.2.840") || sigAlgoOid.startsWith("2.16.840"),
+                "signatureAlgorithm must be an OID, got: " + sigAlgoOid);
+        assertFalse(json.has("certificate"), "certificate must not be present in signHash response");
     }
 
     @Test

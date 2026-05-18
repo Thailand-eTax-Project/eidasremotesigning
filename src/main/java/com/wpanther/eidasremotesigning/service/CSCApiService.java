@@ -292,7 +292,7 @@ public class CSCApiService {
             if (request.getSignAlgo() != null && !request.getSignAlgo().isBlank()) {
                 jcaSigAlgo = OIDMapper.toJcaSigAlgo(request.getSignAlgo());
             } else {
-                jcaSigAlgo = determineSignatureAlgorithm(keyAlgoForSig, hashAlgo);
+                jcaSigAlgo = OIDMapper.deriveJcaSigAlgo(keyAlgoForSig, hashAlgo);
             }
 
             // Convert signature algorithm to OID for response
@@ -348,43 +348,6 @@ public class CSCApiService {
         } catch (Exception e) {
             log.error("Error in signHash", e);
             throw new SigningException("Failed to sign hash: " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Determines the appropriate signature algorithm based on key and digest
-     * algorithms
-     */
-    private String determineSignatureAlgorithm(String keyAlgorithm, String digestAlgorithm) {
-        // Normalize input
-        keyAlgorithm = keyAlgorithm.toUpperCase();
-        digestAlgorithm = digestAlgorithm.toUpperCase();
-
-        // Map to standard JCA signature algorithm identifiers
-        if (keyAlgorithm.equals("RSA")) {
-            switch (digestAlgorithm) {
-                case "SHA-256":
-                    return "SHA256withRSA";
-                case "SHA-384":
-                    return "SHA384withRSA";
-                case "SHA-512":
-                    return "SHA512withRSA";
-                default:
-                    throw new SigningException("Unsupported digest algorithm for RSA: " + digestAlgorithm);
-            }
-        } else if (keyAlgorithm.equals("EC")) {
-            switch (digestAlgorithm) {
-                case "SHA-256":
-                    return "SHA256withECDSA";
-                case "SHA-384":
-                    return "SHA384withECDSA";
-                case "SHA-512":
-                    return "SHA512withECDSA";
-                default:
-                    throw new SigningException("Unsupported digest algorithm for ECDSA: " + digestAlgorithm);
-            }
-        } else {
-            throw new SigningException("Unsupported key algorithm: " + keyAlgorithm);
         }
     }
 

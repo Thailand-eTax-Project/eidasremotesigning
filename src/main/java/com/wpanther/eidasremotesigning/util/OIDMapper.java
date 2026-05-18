@@ -86,6 +86,23 @@ public final class OIDMapper {
     public static String[] supportedSigOidsForKeyAlgo(String jcaKeyAlgo) {
         String[] result = KEY_TO_SIG_OIDS.get(jcaKeyAlgo);
         if (result == null) throw new SigningException("No supported signature algorithms for key type: " + jcaKeyAlgo);
-        return result;
+        return result.clone();
+    }
+
+    public static String deriveJcaSigAlgo(String keyAlgorithm, String hashAlgorithm) {
+        String key = keyAlgorithm.toUpperCase();
+        String hash = hashAlgorithm.toUpperCase().replace("-", "");
+        String prefix = "SHA".equals(hash.substring(0, 3)) ? hash : hash;
+
+        if ("RSA".equals(key)) {
+            String jca = prefix + "withRSA";
+            if (SIG_JCA_TO_OID.containsKey(jca)) return jca;
+            throw new SigningException("Unsupported digest algorithm for RSA: " + hashAlgorithm);
+        } else if ("EC".equals(key)) {
+            String jca = prefix + "withECDSA";
+            if (SIG_JCA_TO_OID.containsKey(jca)) return jca;
+            throw new SigningException("Unsupported digest algorithm for ECDSA: " + hashAlgorithm);
+        }
+        throw new SigningException("Unsupported key algorithm: " + keyAlgorithm);
     }
 }
