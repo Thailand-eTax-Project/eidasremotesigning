@@ -53,11 +53,8 @@ public class TransactionAuthorization {
     @Column(name = "updated_at")
     private Instant updatedAt;
 
-    /**
-     * Temporary placeholder for stored PIN from authorization.
-     * TODO: remove after Task 8
-     */
-    public String getStoredPin() { return null; }
+    @Column(name = "stored_pin")
+    private String storedPin;
 
     // States: AUTHORIZATION_INITIALIZED, AUTHORIZED, EXPIRED, COMPLETED, FAILED
 }
