@@ -10,7 +10,7 @@ public final class CSCConstants {
     }
 
     /** CSC API specification version implemented by this service. */
-    public static final String SPECS_VERSION = "2.0";
+    public static final String SPECS_VERSION = "2.0.0.0";
 
     /** OAuth2 authorization code grant type identifier (CSC API standard auth method). */
     public static final String AUTH_TYPE_OAUTH2_CODE = "oauth2code";
@@ -29,4 +29,13 @@ public final class CSCConstants {
 
     /** Operation mode: asynchronous. */
     public static final String OPERATION_MODE_ASYNC = "A";
+
+    // CSC API v2.0 error codes (Section 8)
+
+    public static final String ERROR_INVALID_REQUEST = "invalid_request";
+    public static final String ERROR_UNAUTHORIZED_CLIENT = "unauthorized_client";
+    public static final String ERROR_ACCESS_DENIED = "access_denied";
+    public static final String ERROR_CREDENTIAL_NOT_FOUND = "credential_not_found";
+    public static final String ERROR_SIGNING_ERROR = "signing_error";
+    public static final String ERROR_UNSUPPORTED_OPERATION = "unsupported_operation";
 }
