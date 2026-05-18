@@ -23,4 +23,10 @@ public final class CSCConstants {
 
     /** Key status: enabled. */
     public static final String KEY_STATUS_ENABLED = "enabled";
+
+    /** Operation mode: synchronous. */
+    public static final String OPERATION_MODE_SYNC = "S";
+
+    /** Operation mode: asynchronous. */
+    public static final String OPERATION_MODE_ASYNC = "A";
 }

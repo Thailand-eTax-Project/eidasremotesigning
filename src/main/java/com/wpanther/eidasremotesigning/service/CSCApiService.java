@@ -159,7 +159,7 @@ public class CSCApiService {
     @Transactional
     public CSCSignatureResponse signHash(CSCSignatureRequest request) {
         // Check if async mode is requested
-        if (Boolean.TRUE.equals(request.getAsync())) {
+        if (CSCConstants.OPERATION_MODE_ASYNC.equals(request.getOperationMode())) {
             return signHashAsync(request);
         }
 
@@ -214,9 +214,7 @@ public class CSCApiService {
             String pin = extractPinFromRequest(request);
 
             // Validate request
-            if (request.getSignatureData() == null ||
-                    request.getSignatureData().getHashToSign() == null ||
-                    request.getSignatureData().getHashToSign().length == 0) {
+            if (request.getHash() == null || request.getHash().length == 0) {
                 throw new SigningException("No hash values provided to sign");
             }
 
@@ -235,16 +233,6 @@ public class CSCApiService {
                 }
             }
 
-            // Determine signature type from request if specified
-            DigestSigningRequest.SignatureType signatureType = DigestSigningRequest.SignatureType.XADES;
-            if (request.getSignatureData().getSignatureAttributes() != null &&
-                    request.getSignatureData().getSignatureAttributes().getSignatureType() != null) {
-                String requestedType = request.getSignatureData().getSignatureAttributes().getSignatureType();
-                if ("PAdES".equalsIgnoreCase(requestedType)) {
-                    signatureType = DigestSigningRequest.SignatureType.PADES;
-                }
-            }
-
             // Find the certificate (with client ownership check)
             SigningCertificate certEntity = certificateRepository.findByIdAndClientId(credentialID, request.getClientId())
                     .orElseThrow(() -> new SigningException("Certificate not found"));
@@ -259,14 +247,12 @@ public class CSCApiService {
             X509Certificate certificate;
 
             if ("AWSKMS".equals(certEntity.getStorageType())) {
-                // For AWS KMS, no private key needed
                 if (awskmsService == null) {
                     throw new SigningException("AWS KMS is not enabled or configured");
                 }
                 certificate = certificateService.getCertificateWithX509(credentialID, null)
                         .getX509Certificate();
             } else {
-                // For PKCS#11 and BCFKS, PIN is required to load the private key
                 if (pin == null || pin.isEmpty()) {
                     throw new SigningException("PIN is required for signing with " + certEntity.getStorageType() + " token");
                 }
@@ -275,16 +261,17 @@ public class CSCApiService {
                         .getX509Certificate();
             }
 
-            // Validate hash algorithm
-            String hashAlgo = request.getHashAlgo();
-            if (!isValidHashAlgorithm(hashAlgo)) {
-                throw new SigningException("Unsupported hash algorithm: " + hashAlgo);
-            }
+            // Validate hash algorithm — translate OID to JCA name
+            String hashAlgoOid = request.getHashAlgo();
+            String hashAlgo = OIDMapper.toJcaHashAlgo(hashAlgoOid);
+
+            // Determine signature type (always XAdES for signHash — no more SignatureAttributes)
+            DigestSigningRequest.SignatureType signatureType = DigestSigningRequest.SignatureType.XADES;
 
             // Create digest signing request for eIDAS compliance validation
             DigestSigningRequest validationRequest = DigestSigningRequest.builder()
                     .certificateId(credentialID)
-                    .digestValue(request.getSignatureData().getHashToSign()[0]) // Use first hash for validation
+                    .digestValue(request.getHash()[0])
                     .digestAlgorithm(hashAlgo)
                     .signatureType(signatureType)
                     .build();
@@ -299,69 +286,62 @@ public class CSCApiService {
             } else {
                 keyAlgoForSig = privateKey.getAlgorithm();
             }
-            String signatureAlgorithm = determineSignatureAlgorithm(keyAlgoForSig, hashAlgo);
+
+            // Use signAlgo from request if provided, otherwise derive from key type + hash algo
+            String jcaSigAlgo;
+            if (request.getSignAlgo() != null && !request.getSignAlgo().isBlank()) {
+                jcaSigAlgo = OIDMapper.toJcaSigAlgo(request.getSignAlgo());
+            } else {
+                jcaSigAlgo = determineSignatureAlgorithm(keyAlgoForSig, hashAlgo);
+            }
+
+            // Convert signature algorithm to OID for response
+            String sigAlgoOid = OIDMapper.toOidSigAlgo(jcaSigAlgo);
 
             // Results for multiple hash values
-            String[] signatures = new String[request.getSignatureData().getHashToSign().length];
-            String certBase64 = Base64.getEncoder().encodeToString(certificate.getEncoded());
+            String[] signatures = new String[request.getHash().length];
 
             // Sign each hash
-            for (int i = 0; i < request.getSignatureData().getHashToSign().length; i++) {
-                String hashToSign = request.getSignatureData().getHashToSign()[i];
-
-                // Decode the hash
+            for (int i = 0; i < request.getHash().length; i++) {
+                String hashToSign = request.getHash()[i];
                 byte[] hashBytes = Base64.getDecoder().decode(hashToSign);
 
                 byte[] signatureBytes;
 
                 if ("AWSKMS".equals(certEntity.getStorageType())) {
-                    // For AWS KMS, use the KMS service to sign
                     signatureBytes = awskmsService.signDigest(
                             certEntity.getKmsKeyId(),
                             hashBytes,
                             hashAlgo,
                             keyAlgoForSig);
                 } else {
-                    // Create signature instance with the appropriate provider
                     Signature signature;
                     if ("PKCS11".equals(certEntity.getStorageType())) {
-                        // For PKCS#11, use the HSM provider
-                        signature = Signature.getInstance(signatureAlgorithm, certEntity.getProviderName());
+                        signature = Signature.getInstance(jcaSigAlgo, certEntity.getProviderName());
                     } else {
-                        // For BCFKS, use the BCFIPS provider
-                        signature = Signature.getInstance(signatureAlgorithm, "BCFIPS");
+                        signature = Signature.getInstance(jcaSigAlgo, "BCFIPS");
                     }
-
-                    // Initialize the signature
                     signature.initSign(privateKey);
-
-                    // Update with the hash value
                     signature.update(hashBytes);
-
-                    // Generate the signature
                     signatureBytes = signature.sign();
                 }
 
-                // Encode the signature value
                 signatures[i] = Base64.getEncoder().encodeToString(signatureBytes);
 
-                // Create a digest signing request for logging
+                // Log the successful signing operation
                 DigestSigningRequest logRequest = DigestSigningRequest.builder()
                         .certificateId(credentialID)
                         .digestValue(hashToSign)
                         .digestAlgorithm(hashAlgo)
                         .signatureType(signatureType)
                         .build();
-
-                // Log the successful signing operation
-                signingLogService.logSuccessfulSigning(logRequest, signatureAlgorithm);
+                signingLogService.logSuccessfulSigning(logRequest, jcaSigAlgo);
             }
 
             // Build and return CSC response
             return CSCSignatureResponse.builder()
-                    .signatureAlgorithm(signatureAlgorithm)
+                    .signatureAlgorithm(sigAlgoOid)
                     .signatures(signatures)
-                    .certificate(certBase64)
                     .build();
         } catch (SigningException se) {
             throw se;
@@ -369,16 +349,6 @@ public class CSCApiService {
             log.error("Error in signHash", e);
             throw new SigningException("Failed to sign hash: " + e.getMessage(), e);
         }
-    }
-
-    /**
-     * Validates if the hash algorithm is supported
-     */
-    private boolean isValidHashAlgorithm(String algorithm) {
-        String upperAlgo = algorithm.toUpperCase();
-        return upperAlgo.equals("SHA-256") ||
-                upperAlgo.equals("SHA-384") ||
-                upperAlgo.equals("SHA-512");
     }
 
     /**
