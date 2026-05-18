@@ -9,8 +9,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import com.wpanther.eidasremotesigning.util.CSCConstants;
+import com.wpanther.eidasremotesigning.util.OIDMapper;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.net.URI;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -25,6 +28,9 @@ public class CSCApiController {
 
     private final CSCApiService cscApiService;
 
+    @Value("${app.csc.base-url}")
+    private String cscBaseUrl;
+
     /**
      * Get information about this CSC service
      */
@@ -32,14 +38,16 @@ public class CSCApiController {
     public ResponseEntity<CSCInfoResponse> getInfo() {
         log.debug("CSC API: Request for service information");
 
+        List<String> sigAlgoOids = Arrays.asList(OIDMapper.supportedSigOidsForKeyAlgo("RSA"));
+
         CSCInfoResponse response = CSCInfoResponse.builder()
                 .specs(CSCConstants.SPECS_VERSION)
                 .name("eIDAS Remote Signing Service")
                 .region("EU")
                 .lang("en")
-                .description("eIDAS compliant remote signing service supporting PKCS#11 hardware tokens, AWS KMS, and BCFKS keystores with asynchronous operation support")
-                .authType(new String[]{CSCConstants.AUTH_TYPE_OAUTH2_CODE})
-                .methods(new String[]{
+                .description("eIDAS compliant remote signing service supporting PKCS#11 hardware tokens, AWS KMS, and BCFKS keystores")
+                .authType(List.of(CSCConstants.AUTH_TYPE_OAUTH2_CODE))
+                .methods(List.of(
                         "credentials/list",
                         "credentials/info",
                         "credentials/authorize",
@@ -50,7 +58,20 @@ public class CSCApiController {
                         "signatures/timestamp",
                         "signatures/signPolling",
                         "signatures/validate"
-                })
+                ))
+                .signAlgorithms(CSCInfoResponse.SignAlgorithms.builder()
+                        .algos(sigAlgoOids)
+                        .build())
+                .signature_formats(CSCInfoResponse.SignatureFormats.builder()
+                        .formats(List.of("P", "X"))
+                        .build())
+                .conformance_levels(List.of("Ades-B-B"))
+                .oauth2(CSCInfoResponse.OAuth2Info.builder()
+                        .authorization_endpoint(cscBaseUrl + "/oauth2/authorize")
+                        .token_endpoint(cscBaseUrl + "/oauth2/token")
+                        .revoke_endpoint(cscBaseUrl + "/oauth2/revoke")
+                        .build())
+                .asynchronousOperationMode(true)
                 .build();
 
         return ResponseEntity.ok(response);

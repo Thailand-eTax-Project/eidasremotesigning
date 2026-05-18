@@ -188,4 +188,45 @@ public class EidasRemoteSigningIT {
                 System.out.println("CSC /info endpoint validated successfully");
         }
 
+        /**
+         * Test that /info response contains all required CSC v2.0 fields
+         */
+        @Test
+        @Order(4)
+        public void testInfoResponseContainsRequiredFields() throws Exception {
+                MvcResult result = mockMvc.perform(MockMvcRequestBuilders
+                                .post("/csc/v2/info")
+                                .header("Authorization", "Bearer " + accessToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{}"))
+                                .andExpect(status().isOk())
+                                .andReturn();
+
+                JsonNode info = objectMapper.readTree(result.getResponse().getContentAsString());
+
+                // signAlgorithms
+                assertTrue(info.has("signAlgorithms"), "missing signAlgorithms");
+                assertTrue(info.get("signAlgorithms").has("algos"), "missing signAlgorithms.algos");
+                assertTrue(info.get("signAlgorithms").get("algos").size() > 0, "signAlgorithms.algos is empty");
+
+                // signature_formats
+                assertTrue(info.has("signature_formats"), "missing signature_formats");
+                assertTrue(info.get("signature_formats").has("formats"), "missing signature_formats.formats");
+
+                // conformance_levels
+                assertTrue(info.has("conformance_levels"), "missing conformance_levels");
+                assertTrue(info.get("conformance_levels").isArray(), "conformance_levels is not an array");
+
+                // oauth2
+                assertTrue(info.has("oauth2"), "missing oauth2");
+                assertTrue(info.get("oauth2").has("authorization_endpoint"), "missing oauth2.authorization_endpoint");
+                assertTrue(info.get("oauth2").has("token_endpoint"), "missing oauth2.token_endpoint");
+
+                // asynchronousOperationMode
+                assertTrue(info.has("asynchronousOperationMode"), "missing asynchronousOperationMode");
+                assertTrue(info.get("asynchronousOperationMode").asBoolean(), "asynchronousOperationMode should be true");
+
+                System.out.println("CSC /info required fields validated successfully");
+        }
+
 }
