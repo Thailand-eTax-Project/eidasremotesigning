@@ -155,7 +155,6 @@ public class XAdESSignHashIT {
         assumeTrue(credentialId != null, "credentialId must be set by testRegisterBCFKSCertificate");
 
         CSCAuthorizeRequest authorizeRequest = CSCAuthorizeRequest.builder()
-                .clientId(clientId)
                 .credentialID(credentialId)
                 .numSignatures(1)
                 .build();
@@ -199,12 +198,11 @@ public class XAdESSignHashIT {
                 .build();
 
         CSCSignatureRequest signRequest = CSCSignatureRequest.builder()
-                .clientId(clientId)
                 .credentialID(credentialId)
                 .SAD(sad)
                 .credentials(credentials)
-                .hashAlgo("2.16.840.1.101.3.4.2.1")
-                .hash(new String[]{digest})
+                .hashAlgorithmOID("2.16.840.1.101.3.4.2.1")
+                .hashes(new String[]{digest})
                 .operationMode("S")
                 .build();
 
