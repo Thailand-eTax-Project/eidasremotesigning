@@ -152,6 +152,7 @@ The service implements the following CSC API v2.0 endpoints:
 | POST /csc/v2/signatures/signDocument | Sign a complete document (sync/async) |
 | POST /csc/v2/signatures/status | Check status of asynchronous operations |
 | POST /csc/v2/signatures/timestamp | Create a timestamp for a document or hash |
+| POST /csc/v2/signatures/validate | Validate a signature against a certificate |
 
 #### OAuth2 Endpoints
 | Endpoint | Purpose |
@@ -182,7 +183,7 @@ curl -X POST http://localhost:9000/csc/v2/credentials/authorize \
                "value": "1234"
              }
            },
-           "numSignatures": "1",
+           "numSignatures": 1,
            "validityPeriod": 900,
            "description": "Signing invoice #123"
          }'
@@ -197,16 +198,12 @@ curl -X POST http://localhost:9000/csc/v2/signatures/signHash \
      -d '{
            "clientId": "your_client_id",
            "credentialID": "your_certificate_id",
-           "hashAlgo": "SHA-256",
+           "hashAlgo": "2.16.840.1.101.3.4.2.1",
+           "hash": ["base64_encoded_hash"],
+           "operationMode": "S",
            "credentials": {
              "pin": {
                "value": "1234"
-             }
-           },
-           "signatureData": {
-             "hashToSign": ["base64_encoded_hash"],
-             "signatureAttributes": {
-               "signatureType": "XAdES"
              }
            }
          }'
@@ -224,13 +221,9 @@ curl -X POST http://localhost:9000/csc/v2/signatures/signHash \
            "clientId": "your_client_id",
            "credentialID": "your_certificate_id",
            "SAD": "sad_token_from_authorize",
-           "hashAlgo": "SHA-256",
-           "signatureData": {
-             "hashToSign": ["base64_encoded_hash"],
-             "signatureAttributes": {
-               "signatureType": "XAdES"
-             }
-           }
+           "hashAlgo": "2.16.840.1.101.3.4.2.1",
+           "hash": ["base64_encoded_hash"],
+           "operationMode": "S"
          }'
 ```
 
@@ -247,19 +240,13 @@ curl -X POST http://localhost:9000/csc/v2/signatures/signDocument \
      -d '{
            "clientId": "your_client_id",
            "credentialID": "your_certificate_id",
-           "documentID": "doc-123",
            "document": "base64_encoded_document",
-           "hashAlgo": "SHA-256",
+           "hashAlgo": "2.16.840.1.101.3.4.2.1",
+           "operationMode": "S",
            "credentials": {
              "pin": {
                "value": "1234"
              }
-           },
-           "signatureAttributes": {
-             "signatureType": "PAdES"
-           },
-           "signatureOptions": {
-             "serverTimestamp": "true"
            }
          }'
 ```
@@ -274,12 +261,9 @@ curl -X POST http://localhost:9000/csc/v2/signatures/signDocument \
            "clientId": "your_client_id",
            "credentialID": "your_certificate_id",
            "SAD": "sad_token_from_authorize",
-           "documentID": "doc-123",
            "document": "base64_encoded_document",
-           "hashAlgo": "SHA-256",
-           "signatureAttributes": {
-             "signatureType": "PAdES"
-           }
+           "hashAlgo": "2.16.840.1.101.3.4.2.1",
+           "operationMode": "S"
          }'
 ```
 
@@ -289,8 +273,7 @@ curl -X POST http://localhost:9000/csc/v2/signatures/signDocument \
   "transactionID": "unique-transaction-id",
   "signedDocument": "base64_encoded_signed_document",
   "signedDocumentDigest": "base64_digest",
-  "signatureAlgorithm": "SHA256withRSA",
-  "certificate": "base64_certificate"
+  "signatureAlgorithm": "1.2.840.113549.1.1.11"
 }
 ```
 
@@ -308,15 +291,12 @@ curl -X POST http://localhost:9000/csc/v2/signatures/signDocument \
            "clientId": "your_client_id",
            "credentialID": "your_certificate_id",
            "document": "base64_encoded_large_document",
-           "hashAlgo": "SHA-256",
-           "async": true,
+           "hashAlgo": "2.16.840.1.101.3.4.2.1",
+           "operationMode": "A",
            "credentials": {
              "pin": {
                "value": "1234"
              }
-           },
-           "signatureAttributes": {
-             "signatureType": "PAdES"
            }
          }'
 ```
@@ -353,12 +333,7 @@ curl -X POST http://localhost:9000/csc/v2/signatures/status \
   "status": "COMPLETED",
   "signedDocument": "base64_encoded_signed_document",
   "signedDocumentDigest": "base64_digest",
-  "signatureAlgorithm": "SHA256withRSA",
-  "certificate": "base64_certificate",
-  "timestampData": {
-    "timestamp": "...",
-    "timestampGenerationTime": 1609459200000
-  }
+  "signatureAlgorithm": "1.2.840.113549.1.1.11"
 }
 ```
 
@@ -377,9 +352,49 @@ curl -X POST http://localhost:9000/csc/v2/signatures/timestamp \
      -d '{
            "clientId": "your_client_id",
            "documentDigest": "base64_encoded_digest",
-           "hashAlgo": "SHA-256"
+           "hashAlgo": "2.16.840.1.101.3.4.2.1"
          }'
 ```
+
+### Example: Validate a Signature
+
+```bash
+curl -X POST http://localhost:9000/csc/v2/signatures/validate \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+     -d '{
+           "clientId": "your_client_id",
+           "credentialID": "your_certificate_id",
+           "hashAlgo": "2.16.840.1.101.3.4.2.1",
+           "signature": "base64_encoded_signature",
+           "documentDigest": "base64_encoded_digest",
+           "signAlgo": "1.2.840.113549.1.1.11"
+         }'
+```
+
+**Response:**
+```json
+{
+  "valid": true,
+  "signatureType": "XAdES"
+}
+```
+
+### OID Algorithm Identifiers
+
+The CSC API v2.0 uses OID strings for algorithm fields (`hashAlgo`, `signAlgo`, `signatureAlgorithm`). Common OIDs:
+
+| OID | Algorithm |
+|-----|-----------|
+| `2.16.840.1.101.3.4.2.1` | SHA-256 |
+| `2.16.840.1.101.3.4.2.2` | SHA-384 |
+| `2.16.840.1.101.3.4.2.3` | SHA-512 |
+| `1.2.840.113549.1.1.11` | SHA256withRSA |
+| `1.2.840.113549.1.1.12` | SHA384withRSA |
+| `1.2.840.113549.1.1.13` | SHA512withRSA |
+| `1.2.840.10045.4.3.2` | SHA256withECDSA |
+| `1.2.840.10045.4.3.3` | SHA384withECDSA |
+| `1.2.840.10045.4.3.4` | SHA512withECDSA |
 
 ## Metrics and Logging
 
@@ -548,7 +563,7 @@ The service provides full asynchronous signing support for high-throughput envir
 
 **Async Signing Workflow:**
 
-1. **Submit Request**: Add `"async": true` to any signing request
+1. **Submit Request**: Set `"operationMode": "A"` in any signing request
 2. **Receive Operation ID**: Server returns immediately with `operationID`
 3. **Background Processing**: Signing occurs in thread pool
 4. **Poll Status**: Use `/csc/v2/signatures/status` with the `operationID`
