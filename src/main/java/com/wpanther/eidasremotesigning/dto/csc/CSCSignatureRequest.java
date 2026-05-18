@@ -2,7 +2,6 @@ package com.wpanther.eidasremotesigning.dto.csc;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -25,15 +24,17 @@ public class CSCSignatureRequest {
     @NotBlank(message = "credentialID is required")
     private String credentialID;
 
-    @NotBlank(message = "hashAlgo is required")
-    private String hashAlgo;
+    private String[] hashes;
+
+    private String hashAlgorithmOID;
 
     private String signAlgo;
 
-    @NotNull(message = "hash is required")
-    private String[] hash;
+    private String signAlgoParams;
 
     private String operationMode;
 
     private SignatureOptions signatureOptions;
+
+    private String clientData;
 }

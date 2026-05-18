@@ -12,7 +12,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class CSCSignatureResponse {
-    private String operationID;
+    private String responseID;
     private String signatureAlgorithm;
     private String[] signatures;
 }

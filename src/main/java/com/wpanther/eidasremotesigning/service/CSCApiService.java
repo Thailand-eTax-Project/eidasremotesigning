@@ -182,9 +182,9 @@ public class CSCApiService {
         // Submit async task
         CompletableFuture.runAsync(() -> executeAsyncSignHash(operation.getId(), request), asyncExecutor);
 
-        // Return immediately with operationID
+        // Return immediately with responseID
         return CSCSignatureResponse.builder()
-                .operationID(operation.getId())
+                .responseID(operation.getId())
                 .build();
     }
 
@@ -214,7 +214,7 @@ public class CSCApiService {
             String pin = extractPinFromRequest(request);
 
             // Validate request
-            if (request.getHash() == null || request.getHash().length == 0) {
+            if (request.getHashes() == null || request.getHashes().length == 0) {
                 throw new SigningException("No hash values provided to sign");
             }
 
@@ -262,7 +262,7 @@ public class CSCApiService {
             }
 
             // Validate hash algorithm — translate OID to JCA name
-            String hashAlgoOid = request.getHashAlgo();
+            String hashAlgoOid = request.getHashAlgorithmOID();
             String hashAlgo = OIDMapper.toJcaHashAlgo(hashAlgoOid);
 
             // Determine signature type (always XAdES for signHash — no more SignatureAttributes)
@@ -271,7 +271,7 @@ public class CSCApiService {
             // Create digest signing request for eIDAS compliance validation
             DigestSigningRequest validationRequest = DigestSigningRequest.builder()
                     .certificateId(credentialID)
-                    .digestValue(request.getHash()[0])
+                    .digestValue(request.getHashes()[0])
                     .digestAlgorithm(hashAlgo)
                     .signatureType(signatureType)
                     .build();
@@ -299,11 +299,11 @@ public class CSCApiService {
             String sigAlgoOid = OIDMapper.toOidSigAlgo(jcaSigAlgo);
 
             // Results for multiple hash values
-            String[] signatures = new String[request.getHash().length];
+            String[] signatures = new String[request.getHashes().length];
 
             // Sign each hash
-            for (int i = 0; i < request.getHash().length; i++) {
-                String hashToSign = request.getHash()[i];
+            for (int i = 0; i < request.getHashes().length; i++) {
+                String hashToSign = request.getHashes()[i];
                 byte[] hashBytes = Base64.getDecoder().decode(hashToSign);
 
                 byte[] signatureBytes;
