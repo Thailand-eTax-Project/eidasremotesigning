@@ -53,10 +53,8 @@ public class CSCAuthorizationService {
             SigningCertificate certificate = certificateRepository.findByIdAndClientId(credentialId, clientId)
                     .orElseThrow(() -> new CertificateException("Certificate not found"));
             
-            // Determine validity period
-            long validityPeriod = request.getValidityPeriod() != null 
-                    ? Math.min(request.getValidityPeriod(), MAX_VALIDITY_PERIOD)
-                    : DEFAULT_VALIDITY_PERIOD;
+            // Determine validity period (use default since validityPeriod removed from request)
+            long validityPeriod = DEFAULT_VALIDITY_PERIOD;
             
             // Generate transaction ID
             String transactionId = UUID.randomUUID().toString();
@@ -108,11 +106,11 @@ public class CSCAuthorizationService {
     public CSCExtendTransactionResponse extendTransaction(CSCExtendTransactionRequest request) {
         try {
             String clientId = currentClientId();
-            String transactionId = request.getTransactionID();
-            
-            // Find transaction
-            TransactionAuthorization transaction = transactionRepository.findByIdAndClientId(transactionId, clientId)
-                    .orElseThrow(() -> new SigningException("Transaction not found"));
+
+            // Look up transaction by SAD (not by ID)
+            TransactionAuthorization transaction = transactionRepository
+                    .findBySadAndClientId(request.getSAD(), clientId)
+                    .orElseThrow(() -> new SigningException("Transaction not found for provided SAD"));
             
             // Check if transaction has expired
             if (transaction.getExpiresAt().isBefore(Instant.now())) {
@@ -130,7 +128,7 @@ public class CSCAuthorizationService {
             transaction.setExpiresAt(newExpiresAt);
             
             transactionRepository.save(transaction);
-            log.debug("Extended transaction authorization: {}", transactionId);
+            log.debug("Extended transaction authorization: {}", transaction.getId());
             
             // Calculate expires in time in seconds
             long expiresIn = DEFAULT_VALIDITY_PERIOD;

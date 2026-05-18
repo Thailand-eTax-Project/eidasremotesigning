@@ -27,6 +27,8 @@ logging:
 
 # Use a temporary directory for keystores during testing
 app:
+  csc:
+    base-url: http://localhost:9000
   keystore:
     base-path: ${java.io.tmpdir}/test-keystores
   pkcs11:

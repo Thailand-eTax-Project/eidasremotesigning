@@ -45,7 +45,9 @@ import java.security.PrivateKey;
 import java.security.Signature;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -148,7 +150,7 @@ public class CSCSignatureService {
 
         // Return immediately with operationID
         return CSCSignDocumentResponse.builder()
-                .operationID(operation.getId())
+                .responseID(operation.getId())
                 .build();
     }
 
@@ -176,24 +178,19 @@ public class CSCSignatureService {
         try{
             String clientId = currentClientId();
             String credentialId = request.getCredentialID();
-            String pin = extractPinFromRequest(request);
-            String transactionId = UUID.randomUUID().toString();
 
             // Check if we have a SAD or PIN
-            if (request.getSAD() == null && pin == null) {
-                throw new SigningException("Either PIN or SAD is required for signing operations");
+            if (request.getSAD() == null) {
+                throw new SigningException("SAD is required for signing operations");
             }
 
-            // If SAD is provided, validate transaction using SAD lookup
-            TransactionAuthorization transaction = null;
-            if (request.getSAD() != null) {
-                transaction = cscAuthorizationService.validateTransactionForSigningBySad(
-                        clientId, request.getSAD());
+            // Validate transaction using SAD lookup
+            TransactionAuthorization transaction = cscAuthorizationService.validateTransactionForSigningBySad(
+                    clientId, request.getSAD());
 
-                // Make sure the credential IDs match
-                if (!transaction.getCertificateId().equals(credentialId)) {
-                    throw new SigningException("Credential ID does not match authorized transaction");
-                }
+            // Make sure the credential IDs match
+            if (!transaction.getCertificateId().equals(credentialId)) {
+                throw new SigningException("Credential ID does not match authorized transaction");
             }
 
             // Find the certificate (with client ownership check)
@@ -205,62 +202,28 @@ public class CSCSignatureService {
                 throw new SigningException("Certificate is not active");
             }
 
-            // Get the certificate
+            // Get stored PIN from transaction (SAD was already validated)
+            String pin = transaction.getStoredPin();
+
+            // Load certificate and private key
             X509Certificate certificate;
             PrivateKey privateKey = null;  // Will be null for AWS KMS
 
-            if (pin != null) {
-                // Load using PIN
+            if ("AWSKMS".equals(certEntity.getStorageType())) {
+                // For AWS KMS, no PIN needed
+                certificate = certificateService.getCertificateWithX509(credentialId, null)
+                        .getX509Certificate();
+            } else {
+                // For PKCS#11/BCFKS, PIN is required
+                if (pin == null || pin.isEmpty()) {
+                    throw new SigningException("PIN was not captured during credential authorization");
+                }
                 certificate = certificateService.getCertificateWithX509(credentialId, pin)
                         .getX509Certificate();
-
-                // Only load private key if not AWS KMS
-                if (!"AWSKMS".equals(certEntity.getStorageType())) {
-                    privateKey = certificateService.getPrivateKey(credentialId, pin);
-                }
-            } else {
-                // We should have a transaction with SAD already validated
-                if (transaction == null) {
-                    throw new SigningException("Internal error: No transaction with valid SAD");
-                }
-
-                // For non-KMS, we need the PIN
-                if (!"AWSKMS".equals(certEntity.getStorageType())) {
-                    if (request.getCredentials() == null ||
-                        request.getCredentials().getPin() == null ||
-                        request.getCredentials().getPin().getValue() == null) {
-                        throw new SigningException("PIN is required for signing with PKCS#11 token");
-                    }
-
-                    String tokenPin = request.getCredentials().getPin().getValue();
-                    certificate = certificateService.getCertificateWithX509(credentialId, tokenPin)
-                            .getX509Certificate();
-                    privateKey = certificateService.getPrivateKey(credentialId, tokenPin);
-                } else {
-                    // For AWS KMS, no PIN needed
-                    certificate = certificateService.getCertificateWithX509(credentialId, null)
-                            .getX509Certificate();
-                }
+                privateKey = certificateService.getPrivateKey(credentialId, pin);
             }
 
-            // Validate hash algorithm — translate OID to JCA name
-            String hashAlgo = OIDMapper.toJcaHashAlgo(request.getHashAlgo());
-
-            // Determine signature type from document format (default XAdES)
-            DigestSigningRequest.SignatureType signatureType = DigestSigningRequest.SignatureType.XADES;
-
-            // Create digest signing request for eIDAS compliance validation
-            DigestSigningRequest validationRequest = DigestSigningRequest.builder()
-                    .certificateId(credentialId)
-                    .digestValue(request.getDocumentDigest())
-                    .digestAlgorithm(hashAlgo)
-                    .signatureType(signatureType)
-                    .build();
-
-            // Verify eIDAS compliance
-            eidasComplianceService.validateEIDASCompliance(validationRequest, certificate);
-
-            // Determine signature algorithm (handle AWS KMS where privateKey is null)
+            // Determine signature algorithm
             String keyAlgoForSig;
             if ("AWSKMS".equals(certEntity.getStorageType())) {
                 if (awskmsService == null) {
@@ -270,80 +233,125 @@ public class CSCSignatureService {
             } else {
                 keyAlgoForSig = privateKey.getAlgorithm();
             }
-            String signatureAlgorithm = OIDMapper.deriveJcaSigAlgo(keyAlgoForSig, hashAlgo);
 
-            // For document signing, we need to check if the document is provided or just the digest
-            boolean isDocumentProvided = request.getDocument() != null && !request.getDocument().isEmpty();
-            byte[] documentBytes = null;
-            byte[] digestBytes = null;
+            // Prepare results list
+            List<String> signedDocuments = new ArrayList<>();
+            List<String> signatureObjects = new ArrayList<>();
 
-            if (isDocumentProvided) {
-                // Decode document
-                documentBytes = Base64.getDecoder().decode(request.getDocument());
+            // Check if we have documentDigests (digest-only signing) or documents (full document signing)
+            List<CSCSignDocumentRequest.DocumentDigestEntry> digestEntries = request.getDocumentDigests();
+            List<CSCSignDocumentRequest.DocumentEntry> documentEntries = request.getDocuments();
 
-                // Validate document format
-                String mimeType = documentFormatUtil.detectMimeType(documentBytes);
-                if ("application/pdf".equals(mimeType)) {
-                    if (!documentFormatUtil.validatePdfDocument(documentBytes)) {
-                        throw new SigningException("Invalid PDF document structure");
+            if (digestEntries != null && !digestEntries.isEmpty()) {
+                // Digest-only signing path
+                for (CSCSignDocumentRequest.DocumentDigestEntry entry : digestEntries) {
+                    String hashAlgoOid = entry.getHashAlgorithmOID();
+                    String hashAlgo = OIDMapper.toJcaHashAlgo(hashAlgoOid);
+                    String signAlgoOid = entry.getSignAlgo();
+                    String jcaSigAlgo = OIDMapper.toJcaSigAlgo(signAlgoOid);
+
+                    // Validate eIDAS compliance for first digest entry
+                    if (signedDocuments.isEmpty()) {
+                        DigestSigningRequest validationRequest = DigestSigningRequest.builder()
+                                .certificateId(credentialId)
+                                .digestValue(entry.getHashes().get(0))
+                                .digestAlgorithm(hashAlgo)
+                                .signatureType(DigestSigningRequest.SignatureType.XADES)
+                                .build();
+                        eidasComplianceService.validateEIDASCompliance(validationRequest, certificate);
                     }
-                } else if ("application/xml".equals(mimeType)) {
-                    if (!documentFormatUtil.validateXmlDocument(documentBytes)) {
-                        throw new SigningException("Invalid XML document structure");
+
+                    // Sign each hash
+                    List<String> signatures = new ArrayList<>();
+                    for (String hashBase64 : entry.getHashes()) {
+                        byte[] hashBytes = Base64.getDecoder().decode(hashBase64);
+                        byte[] signatureBytes = signRawBytes(hashBytes, certEntity, privateKey,
+                                jcaSigAlgo, hashAlgo, keyAlgoForSig, true);
+                        signatures.add(Base64.getEncoder().encodeToString(signatureBytes));
                     }
+
+                    // For digest-only, signatureObject contains the raw signatures
+                    signatureObjects.add(String.join(",", signatures));
+
+                    // Log successful signing
+                    signingLogService.logSuccessfulSigning(
+                            DigestSigningRequest.builder()
+                                    .certificateId(credentialId)
+                                    .digestAlgorithm(hashAlgo)
+                                    .signatureType(DigestSigningRequest.SignatureType.XADES)
+                                    .build(),
+                            jcaSigAlgo);
                 }
+            } else if (documentEntries != null && !documentEntries.isEmpty()) {
+                // Full document signing path
+                for (CSCSignDocumentRequest.DocumentEntry entry : documentEntries) {
+                    String signatureFormat = entry.getSignature_format();
+                    String signAlgoOid = entry.getSignAlgo();
+                    String jcaSigAlgo = OIDMapper.toJcaSigAlgo(signAlgoOid);
 
-                // Calculate digest for verification
-                MessageDigest digest = MessageDigest.getInstance(hashAlgo);
-                digestBytes = digest.digest(documentBytes);
+                    // Determine hash algorithm from signAlgo
+                    String hashAlgo = OIDMapper.toJcaHashAlgo(
+                            OIDMapper.toJcaHashAlgoForSig(signAlgoOid));
 
-                // Compare with provided digest if available
-                if (request.getDocumentDigest() != null) {
-                    byte[] providedDigest = Base64.getDecoder().decode(request.getDocumentDigest());
-                    if (!MessageDigest.isEqual(digestBytes, providedDigest)) {
-                        throw new SigningException("Document digest does not match the calculated digest");
+                    // Decode document
+                    byte[] documentBytes = Base64.getDecoder().decode(entry.getDocument());
+
+                    // Validate document format
+                    String mimeType = documentFormatUtil.detectMimeType(documentBytes);
+                    if ("application/pdf".equals(mimeType)) {
+                        if (!documentFormatUtil.validatePdfDocument(documentBytes)) {
+                            throw new SigningException("Invalid PDF document structure");
+                        }
+                    } else if ("application/xml".equals(mimeType)) {
+                        if (!documentFormatUtil.validateXmlDocument(documentBytes)) {
+                            throw new SigningException("Invalid XML document structure");
+                        }
                     }
+
+                    // Calculate digest
+                    MessageDigest digest = MessageDigest.getInstance(hashAlgo);
+                    byte[] digestBytes = digest.digest(documentBytes);
+
+                    // Determine signature type from format
+                    DigestSigningRequest.SignatureType signatureType =
+                            "PADES".equalsIgnoreCase(signatureFormat) ?
+                                    DigestSigningRequest.SignatureType.PADES :
+                                    DigestSigningRequest.SignatureType.XADES;
+
+                    // Validate eIDAS compliance
+                    DigestSigningRequest validationRequest = DigestSigningRequest.builder()
+                            .certificateId(credentialId)
+                            .digestValue(Base64.getEncoder().encodeToString(digestBytes))
+                            .digestAlgorithm(hashAlgo)
+                            .signatureType(signatureType)
+                            .build();
+                    eidasComplianceService.validateEIDASCompliance(validationRequest, certificate);
+
+                    // Sign document using EU DSS
+                    String signedDocumentBase64;
+                    if (DigestSigningRequest.SignatureType.PADES == signatureType) {
+                        signedDocumentBase64 = signDocumentWithPAdES(documentBytes, certificate, certEntity,
+                                privateKey, hashAlgo, jcaSigAlgo, keyAlgoForSig);
+                    } else {
+                        signedDocumentBase64 = signDocumentWithXAdES(documentBytes, certificate, certEntity,
+                                privateKey, hashAlgo, jcaSigAlgo, keyAlgoForSig);
+                    }
+
+                    signedDocuments.add(signedDocumentBase64);
+                    signatureObjects.add(null); // DSS handles signature embedding
+
+                    // Log successful signing
+                    signingLogService.logSuccessfulSigning(validationRequest, jcaSigAlgo);
                 }
             } else {
-                // Use provided digest
-                if (request.getDocumentDigest() == null) {
-                    throw new SigningException("Either document or documentDigest must be provided");
-                }
-                digestBytes = Base64.getDecoder().decode(request.getDocumentDigest());
+                throw new SigningException("Either documentDigests or documents must be provided");
             }
 
-            // Signed document result (for DSS integration)
-            String signedDocumentBase64 = null;
-
-            if (isDocumentProvided) {
-                // Use EU DSS library for proper PAdES/XAdES document signing
-                String mimeType = documentFormatUtil.detectMimeType(documentBytes);
-
-                if ("application/pdf".equals(mimeType) || signatureType == DigestSigningRequest.SignatureType.PADES) {
-                    // PAdES signing
-                    signedDocumentBase64 = signDocumentWithPAdES(documentBytes, certificate, certEntity,
-                            privateKey, hashAlgo, signatureAlgorithm, keyAlgoForSig);
-                } else {
-                    // XAdES signing
-                    signedDocumentBase64 = signDocumentWithXAdES(documentBytes, certificate, certEntity,
-                            privateKey, hashAlgo, signatureAlgorithm, keyAlgoForSig);
-                }
-            } else {
-                // Digest-only: sign the digest bytes and return raw signature
-                byte[] signatureBytes = signRawBytes(digestBytes, certEntity, privateKey,
-                        signatureAlgorithm, hashAlgo, keyAlgoForSig, true);
-                signedDocumentBase64 = Base64.getEncoder().encodeToString(signatureBytes);
-            }
-
-            // Log the successful signing operation
-            signingLogService.logSuccessfulSigning(validationRequest, signatureAlgorithm);
-
-            // Return response with signed document
+            // Return response
             return CSCSignDocumentResponse.builder()
-                    .transactionID(transactionId)
-                    .signedDocument(signedDocumentBase64)
-                    .signedDocumentDigest(Base64.getEncoder().encodeToString(digestBytes))
-                    .signatureAlgorithm(OIDMapper.toOidSigAlgo(signatureAlgorithm))
+                    .documentWithSignature(signedDocuments.isEmpty() ? null : signedDocuments)
+                    .signatureObject(signatureObjects)
+                    .responseID(UUID.randomUUID().toString())
                     .build();
 
         } catch (SigningException se) {
@@ -512,10 +520,9 @@ public class CSCSignatureService {
                             operation.getResultData(),
                             CSCSignDocumentResponse.class
                     );
-                    builder.signedDocument(result.getSignedDocument())
-                            .signedDocumentDigest(result.getSignedDocumentDigest())
-                            .transactionID(result.getTransactionID())
-                            .signatureAlgorithm(result.getSignatureAlgorithm());
+                    builder.documentWithSignature(result.getDocumentWithSignature())
+                            .signatureObject(result.getSignatureObject())
+                            .responseID(result.getResponseID());
                 }
             }
 
@@ -665,18 +672,6 @@ public class CSCSignatureService {
         }
     }
 
-    /**
-     * Extracts PIN from CSC request
-     */
-    private String extractPinFromRequest(CSCSignDocumentRequest request) {
-        if (request.getCredentials() != null && 
-            request.getCredentials().getPin() != null && 
-            request.getCredentials().getPin().getValue() != null) {
-            return request.getCredentials().getPin().getValue();
-        }
-        return null;
-    }
-    
     /**
      * Internal class for tracking asynchronous signing operations
      */

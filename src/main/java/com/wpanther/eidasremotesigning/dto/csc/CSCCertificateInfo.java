@@ -1,10 +1,13 @@
 package com.wpanther.eidasremotesigning.dto.csc;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import java.util.List;
 
 @Data
 @Builder
@@ -17,16 +20,19 @@ public class CSCCertificateInfo {
     private String status;
     private CSCCertificateDetails cert;
     private CSCKeyInfo key;
-    private String authMode;
+    private AuthInfo auth;
+
+    @JsonProperty("SCAL")
     private String scal;
+
     private Integer multisign;
-    private CSCPINInfo pin;
-    private CSCOTPInfo otp;
+    private String lang;
 
     @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class CSCCertificateDetails {
         private String subjectDN;
         private String issuerDN;
@@ -42,6 +48,7 @@ public class CSCCertificateInfo {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class CSCKeyInfo {
         private String status;
         private String[] algo;
@@ -53,21 +60,24 @@ public class CSCCertificateInfo {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class CSCPINInfo {
-        private String presence;
-        private String format;
-        private String label;
-        private String description;
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class AuthInfo {
+        private String mode;
+        private String expression;
+        private List<AuthObject> objects;
     }
 
     @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class CSCOTPInfo {
-        private String presence;
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class AuthObject {
         private String type;
-        private String provider;
+        private String id;
+        private String format;
+        private String generator;
+        private String label;
         private String description;
     }
 }

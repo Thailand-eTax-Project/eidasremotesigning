@@ -16,6 +16,7 @@ public final class OIDMapper {
     private static final Map<String, String> SIG_OID_TO_JCA = new HashMap<>();
     private static final Map<String, String> SIG_JCA_TO_OID = new HashMap<>();
     private static final Map<String, String[]> KEY_TO_SIG_OIDS = new HashMap<>();
+    private static final Map<String, String> SIG_OID_TO_HASH_JCA = new HashMap<>();
 
     static {
         HASH_OID_TO_JCA.put("2.16.840.1.101.3.4.2.1", "SHA-256");
@@ -104,5 +105,15 @@ public final class OIDMapper {
             throw new SigningException("Unsupported digest algorithm for ECDSA: " + hashAlgorithm);
         }
         throw new SigningException("Unsupported key algorithm: " + keyAlgorithm);
+    }
+
+    /**
+     * Maps a signature algorithm OID to its corresponding hash algorithm JCA name.
+     * Used when we have a signAlgo OID but need to derive the hash algorithm.
+     */
+    public static String toJcaHashAlgoForSig(String sigOid) {
+        String result = SIG_OID_TO_HASH_JCA.get(sigOid);
+        if (result == null) throw new SigningException("Unsupported signature algorithm OID: " + sigOid);
+        return result;
     }
 }

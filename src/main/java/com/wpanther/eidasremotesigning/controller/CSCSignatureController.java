@@ -43,8 +43,8 @@ public class CSCSignatureController {
     @PostMapping("/signDoc")
     public ResponseEntity<CSCSignDocumentResponse> signDocument(
             @Valid @RequestBody CSCSignDocumentRequest request) {
-        log.debug("CSC API: Document signature request for credential: {}, client: {}", 
-                request.getCredentialID(), request.getClientId());
+        log.debug("CSC API: Document signature request for credential: {}",
+                request.getCredentialID());
         
         CSCSignDocumentResponse response = cscSignatureService.signDocument(request);
         return ResponseEntity.ok(response);

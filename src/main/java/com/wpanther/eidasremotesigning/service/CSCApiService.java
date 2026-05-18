@@ -408,11 +408,18 @@ public class CSCApiService {
                 .len(keyLen)
                 .build();
 
-        CSCCertificateInfo.CSCPINInfo pinInfo = CSCCertificateInfo.CSCPINInfo.builder()
-                .presence("PKCS11".equals(cert.getStorageType()) ? "mandatory" : "notRequired")
-                .format("numeric")
+        // Build auth object for PIN-based credentials
+        CSCCertificateInfo.AuthObject pinAuthObject = CSCCertificateInfo.AuthObject.builder()
+                .type("Password")
+                .id("PIN")
+                .format("N")
                 .label("HSM PIN")
-                .description("PIN for accessing the PKCS#11 token")
+                .description("PIN for accessing the signing credential")
+                .build();
+
+        CSCCertificateInfo.AuthInfo authInfo = CSCCertificateInfo.AuthInfo.builder()
+                .mode("AWSKMS".equals(cert.getStorageType()) ? "oauth2code" : "explicit")
+                .objects("AWSKMS".equals(cert.getStorageType()) ? null : List.of(pinAuthObject))
                 .build();
 
         return CSCCertificateInfo.builder()
@@ -423,8 +430,7 @@ public class CSCApiService {
                         : CSCConstants.CREDENTIAL_STATUS_SUSPENDED)
                 .cert(certDetails)
                 .key(keyInfo)
-                .pin(pinInfo)
-                .authMode("explicit")
+                .auth(authInfo)
                 .scal("1")
                 .multisign(1)
                 .build();
