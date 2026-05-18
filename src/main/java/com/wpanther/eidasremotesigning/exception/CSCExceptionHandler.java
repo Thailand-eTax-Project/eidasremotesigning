@@ -11,6 +11,7 @@ import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 
 import com.wpanther.eidasremotesigning.dto.csc.CSCErrorResponse;
+import com.wpanther.eidasremotesigning.util.CSCConstants;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -29,7 +30,7 @@ public class CSCExceptionHandler {
     @ExceptionHandler(CertificateException.class)
     public ResponseEntity<CSCErrorResponse> handleCertificateException(CertificateException ex, WebRequest request) {
         log.error("Certificate error in CSC API", ex);
-        return createCSCErrorResponse("certificate.error", ex.getMessage(), HttpStatus.BAD_REQUEST, request);
+        return createCSCErrorResponse(CSCConstants.ERROR_CREDENTIAL_NOT_FOUND, ex.getMessage(), HttpStatus.BAD_REQUEST, request);
     }
 
     /**
@@ -38,7 +39,7 @@ public class CSCExceptionHandler {
     @ExceptionHandler(SigningException.class)
     public ResponseEntity<CSCErrorResponse> handleSigningException(SigningException ex, WebRequest request) {
         log.error("Signing error in CSC API", ex);
-        return createCSCErrorResponse("signing.error", ex.getMessage(), HttpStatus.BAD_REQUEST, request);
+        return createCSCErrorResponse(CSCConstants.ERROR_SIGNING_ERROR, ex.getMessage(), HttpStatus.BAD_REQUEST, request);
     }
 
     /**
@@ -48,7 +49,7 @@ public class CSCExceptionHandler {
     public ResponseEntity<CSCErrorResponse> handleClientRegistrationException(
             ClientRegistrationException ex, WebRequest request) {
         log.error("Client registration error in CSC API", ex);
-        return createCSCErrorResponse("registration.error", ex.getMessage(), HttpStatus.BAD_REQUEST, request);
+        return createCSCErrorResponse(CSCConstants.ERROR_INVALID_REQUEST, ex.getMessage(), HttpStatus.BAD_REQUEST, request);
     }
 
     /**
@@ -58,7 +59,7 @@ public class CSCExceptionHandler {
     public ResponseEntity<CSCErrorResponse> handleGenericException(Exception ex, WebRequest request) {
         log.error("Unexpected error in CSC API", ex);
         return createCSCErrorResponse(
-                "unexpected.error", 
+                CSCConstants.ERROR_UNSUPPORTED_OPERATION,
                 "An unexpected error occurred: " + ex.getMessage(),
                 HttpStatus.INTERNAL_SERVER_ERROR, 
                 request);
