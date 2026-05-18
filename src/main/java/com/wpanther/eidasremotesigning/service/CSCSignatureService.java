@@ -10,7 +10,9 @@ import com.wpanther.eidasremotesigning.exception.SigningException;
 import com.wpanther.eidasremotesigning.repository.AsyncOperationRepository;
 import com.wpanther.eidasremotesigning.repository.SigningCertificateRepository;
 import com.wpanther.eidasremotesigning.repository.SigningLogRepository;
+import com.wpanther.eidasremotesigning.util.CSCConstants;
 import com.wpanther.eidasremotesigning.util.DocumentFormatUtil;
+import com.wpanther.eidasremotesigning.util.OIDMapper;
 import eu.europa.esig.dss.enumerations.DigestAlgorithm;
 import eu.europa.esig.dss.enumerations.SignatureAlgorithm;
 import eu.europa.esig.dss.enumerations.SignatureLevel;
@@ -43,7 +45,6 @@ import java.security.Signature;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.util.Base64;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -117,7 +118,7 @@ public class CSCSignatureService {
     @Transactional
     public CSCSignDocumentResponse signDocument(CSCSignDocumentRequest request) {
         // Check if async mode is requested
-        if (Boolean.TRUE.equals(request.getAsync())) {
+        if (CSCConstants.OPERATION_MODE_ASYNC.equals(request.getOperationMode())) {
             return signDocumentAsync(request);
         }
 
@@ -237,21 +238,11 @@ public class CSCSignatureService {
                 }
             }
 
-            // Validate hash algorithm
-            String hashAlgo = request.getHashAlgo();
-            if (!isValidHashAlgorithm(hashAlgo)) {
-                throw new SigningException("Unsupported hash algorithm: " + hashAlgo);
-            }
+            // Validate hash algorithm — translate OID to JCA name
+            String hashAlgo = OIDMapper.toJcaHashAlgo(request.getHashAlgo());
 
-            // Determine signature type from request
+            // Determine signature type from document format (default XAdES)
             DigestSigningRequest.SignatureType signatureType = DigestSigningRequest.SignatureType.XADES;
-            if (request.getSignatureAttributes() != null &&
-                request.getSignatureAttributes().getSignatureType() != null) {
-                String requestedType = request.getSignatureAttributes().getSignatureType();
-                if ("PAdES".equalsIgnoreCase(requestedType)) {
-                    signatureType = DigestSigningRequest.SignatureType.PADES;
-                }
-            }
 
             // Create digest signing request for eIDAS compliance validation
             DigestSigningRequest validationRequest = DigestSigningRequest.builder()
@@ -339,19 +330,8 @@ public class CSCSignatureService {
                 signedDocumentBase64 = Base64.getEncoder().encodeToString(signatureBytes);
             }
 
-            // Generate timestamp if requested
-            Map<String, Object> timestampData = null;
-            if (request.getSignatureOptions() != null &&
-                request.getSignatureOptions().getServerTimestamp() != null &&
-                "true".equalsIgnoreCase(request.getSignatureOptions().getServerTimestamp())) {
-
-                timestampData = createTimestampData(digestBytes, hashAlgo);
-            }
-
             // Log the successful signing operation
             signingLogService.logSuccessfulSigning(validationRequest, signatureAlgorithm);
-
-            String certificateBase64 = Base64.getEncoder().encodeToString(certificate.getEncoded());
 
             // Return response with signed document
             return CSCSignDocumentResponse.builder()
@@ -359,8 +339,6 @@ public class CSCSignatureService {
                     .signedDocument(signedDocumentBase64)
                     .signedDocumentDigest(Base64.getEncoder().encodeToString(digestBytes))
                     .signatureAlgorithm(signatureAlgorithm)
-                    .certificate(certificateBase64)
-                    .timestampData(timestampData)
                     .build();
 
         } catch (SigningException se) {
@@ -522,9 +500,7 @@ public class CSCSignatureService {
                             CSCSignatureResponse.class
                     );
                     builder.signatures(result.getSignatures())
-                            .signatureAlgorithm(result.getSignatureAlgorithm())
-                            .certificate(result.getCertificate())
-                            .timestampData(result.getTimestampData());
+                            .signatureAlgorithm(result.getSignatureAlgorithm());
 
                 } else if (AsyncOperationService.TYPE_SIGN_DOCUMENT.equals(operation.getOperationType())) {
                     CSCSignDocumentResponse result = asyncOperationService.deserializeResult(
@@ -534,9 +510,7 @@ public class CSCSignatureService {
                     builder.signedDocument(result.getSignedDocument())
                             .signedDocumentDigest(result.getSignedDocumentDigest())
                             .transactionID(result.getTransactionID())
-                            .signatureAlgorithm(result.getSignatureAlgorithm())
-                            .certificate(result.getCertificate())
-                            .timestampData(result.getTimestampData());
+                            .signatureAlgorithm(result.getSignatureAlgorithm());
                 }
             }
 
@@ -556,12 +530,8 @@ public class CSCSignatureService {
     @Transactional
     public CSCTimestampResponse createTimestamp(CSCTimestampRequest request) {
         try {
-            String hashAlgo = request.getHashAlgo();
-            
-            // Validate hash algorithm
-            if (!isValidHashAlgorithm(hashAlgo)) {
-                throw new SigningException("Unsupported hash algorithm: " + hashAlgo);
-            }
+            // Translate hash algorithm OID to JCA name
+            String hashAlgo = OIDMapper.toJcaHashAlgo(request.getHashAlgo());
             
             byte[] digestBytes;
             
@@ -606,36 +576,8 @@ public class CSCSignatureService {
         }
     }
     
-    /**
-     * Create timestamp data for signing responses
-     */
-    private Map<String, Object> createTimestampData(byte[] digest, String hashAlgo) {
-        try {
-            // Create TSP source
-            OnlineTSPSource tspSource = new OnlineTSPSource(tspUrl);
-            
-            // Map hash algorithm
-            DigestAlgorithm digestAlgorithm = mapHashAlgorithm(hashAlgo);
-            
-            // Get timestamp token
-            // Using the correct method from OnlineTSPSource
-            TimestampBinary timeStampToken = 
-                    tspSource.getTimeStampResponse(digestAlgorithm, digest);
-            
-            byte[] timestampTokenBytes = timeStampToken.getBytes();
-            
-            // Create response data
-            Map<String, Object> timestampData = new HashMap<>();
-            timestampData.put("timestamp", Base64.getEncoder().encodeToString(timestampTokenBytes));
-            timestampData.put("timestampGenerationTime", Instant.now().toEpochMilli());
-            
-            return timestampData;
-        } catch (Exception e) {
-            log.warn("Failed to create timestamp data: {}", e.getMessage());
-            return null;
-        }
-    }
-    
+
+
     /**
      * Maps a hash algorithm name to DSS DigestAlgorithm enum
      */
@@ -654,16 +596,8 @@ public class CSCSignatureService {
         }
     }
     
-    /**
-     * Validates if the hash algorithm is supported
-     */
-    private boolean isValidHashAlgorithm(String algorithm) {
-        String upperAlgo = algorithm.toUpperCase();
-        return upperAlgo.equals("SHA-256") ||
-                upperAlgo.equals("SHA-384") ||
-                upperAlgo.equals("SHA-512");
-    }
-    
+
+
     /**
      * Determines the appropriate signature algorithm based on key and digest algorithms
      */
