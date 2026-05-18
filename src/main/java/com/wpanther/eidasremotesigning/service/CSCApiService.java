@@ -110,31 +110,27 @@ public class CSCApiService {
      * Get detailed information about a specific credential (certificate)
      */
     @Transactional(readOnly = true)
-    public CSCCertificateInfo getCredentialInfo(CSCCredentialsListRequest request, String credentialID) {
+    public CSCCertificateInfo getCredentialInfo(CSCCredentialsInfoRequest request) {
         try {
             String clientId = request.getClientId();
+            String credentialID = request.getCredentialID();
             String pin = extractPinFromRequest(request);
 
-            // Find the certificate by ID and client ID
             SigningCertificate cert = certificateRepository.findByIdAndClientId(credentialID, clientId)
                     .orElseThrow(() -> new CertificateException("Certificate not found"));
 
-            // Load the X509Certificate
             X509Certificate x509Cert;
             if ("PKCS11".equals(cert.getStorageType())) {
-                // For PKCS#11, we need the PIN
                 if (pin == null) {
                     throw new CertificateException("PIN is required for PKCS#11 certificate access");
                 }
                 x509Cert = requirePkcs11Service().getCertificate(cert.getCertificateAlias(), pin);
             } else if ("AWSKMS".equals(cert.getStorageType())) {
-                // For AWS KMS certs, load from stored certificate data
                 byte[] certBytes = Base64.getDecoder().decode(cert.getCertificateData());
                 java.io.ByteArrayInputStream bis = new java.io.ByteArrayInputStream(certBytes);
                 java.security.cert.CertificateFactory cf = java.security.cert.CertificateFactory.getInstance("X.509");
                 x509Cert = (X509Certificate) cf.generateCertificate(bis);
             } else {
-                // For BCFKS certs
                 x509Cert = certificateService.loadCertificateFromBCFKS(cert);
             }
 
@@ -145,6 +141,15 @@ public class CSCApiService {
             log.error("Error in getCredentialInfo", e);
             throw new CertificateException("Failed to get credential info: " + e.getMessage(), e);
         }
+    }
+
+    private String extractPinFromRequest(CSCCredentialsInfoRequest request) {
+        if (request.getCredentials() != null
+                && request.getCredentials().getPin() != null
+                && request.getCredentials().getPin().getValue() != null) {
+            return request.getCredentials().getPin().getValue();
+        }
+        return null;
     }
 
     /**
@@ -413,63 +418,53 @@ public class CSCApiService {
         }
     }
 
-    /**
-     * Maps a certificate entity and X509Certificate to CSC certificate info format
-     */
     private CSCCertificateInfo mapToCscCertificateInfo(SigningCertificate cert, X509Certificate x509Cert)
             throws Exception {
-        // Extract certificate details
-        String subject = x509Cert.getSubjectX500Principal().getName();
+        String subjectDN = x509Cert.getSubjectX500Principal().getName();
         String issuerDN = x509Cert.getIssuerX500Principal().getName();
         String serialNumber = x509Cert.getSerialNumber().toString();
-        long validFrom = x509Cert.getNotBefore().getTime();
-        long validTo = x509Cert.getNotAfter().getTime();
+
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmssZ")
+                .withZone(ZoneOffset.UTC);
+        String validFrom = formatter.format(x509Cert.getNotBefore().toInstant());
+        String validTo = formatter.format(x509Cert.getNotAfter().toInstant());
+
         String certBase64 = Base64.getEncoder().encodeToString(x509Cert.getEncoded());
 
-        // Extract key information
-        String keyAlgo = x509Cert.getPublicKey().getAlgorithm();
-        Integer keyLength = getKeySize(x509Cert.getPublicKey());
+        String keyAlgoJca = x509Cert.getPublicKey().getAlgorithm();
+        Integer keyLen = getKeySize(x509Cert.getPublicKey());
+        String[] sigOids = OIDMapper.supportedSigOidsForKeyAlgo(keyAlgoJca);
 
-        // Extract key usage if available
         String[] keyUsage = null;
         boolean[] keyUsageBits = x509Cert.getKeyUsage();
         if (keyUsageBits != null) {
             List<String> usages = new ArrayList<>();
-            if (keyUsageBits[0])
-                usages.add("digitalSignature");
-            if (keyUsageBits[1])
-                usages.add("nonRepudiation");
-            if (keyUsageBits[2])
-                usages.add("keyEncipherment");
-            if (keyUsageBits[3])
-                usages.add("dataEncipherment");
-            if (keyUsageBits[4])
-                usages.add("keyAgreement");
-            if (keyUsageBits[5])
-                usages.add("keyCertSign");
-            if (keyUsageBits[6])
-                usages.add("cRLSign");
+            if (keyUsageBits[0]) usages.add("digitalSignature");
+            if (keyUsageBits[1]) usages.add("nonRepudiation");
+            if (keyUsageBits[2]) usages.add("keyEncipherment");
+            if (keyUsageBits[3]) usages.add("dataEncipherment");
+            if (keyUsageBits[4]) usages.add("keyAgreement");
+            if (keyUsageBits[5]) usages.add("keyCertSign");
+            if (keyUsageBits[6]) usages.add("cRLSign");
             keyUsage = usages.toArray(new String[0]);
         }
 
-        // Build certificate details
         CSCCertificateInfo.CSCCertificateDetails certDetails = CSCCertificateInfo.CSCCertificateDetails.builder()
-                .subject(subject)
+                .subjectDN(subjectDN)
                 .issuerDN(issuerDN)
                 .serialNumber(serialNumber)
                 .keyUsage(keyUsage)
                 .validFrom(validFrom)
                 .validTo(validTo)
-                .certificate(certBase64)
+                .certificates(new String[]{certBase64})
                 .build();
 
-        // Build key info
         CSCCertificateInfo.CSCKeyInfo keyInfo = CSCCertificateInfo.CSCKeyInfo.builder()
-                .algo(keyAlgo)
-                .length(keyLength)
+                .status(CSCConstants.KEY_STATUS_ENABLED)
+                .algo(sigOids)
+                .len(keyLen)
                 .build();
 
-        // Build PIN info
         CSCCertificateInfo.CSCPINInfo pinInfo = CSCCertificateInfo.CSCPINInfo.builder()
                 .presence("PKCS11".equals(cert.getStorageType()) ? "mandatory" : "notRequired")
                 .format("numeric")
@@ -477,14 +472,18 @@ public class CSCApiService {
                 .description("PIN for accessing the PKCS#11 token")
                 .build();
 
-        // Build and return complete certificate info
         return CSCCertificateInfo.builder()
-                .id(cert.getId())
-                .status(cert.isActive() ? "ACTIVE" : "SUSPENDED")
+                .credentialID(cert.getId())
+                .description(cert.getDescription())
+                .status(cert.isActive()
+                        ? CSCConstants.CREDENTIAL_STATUS_ENABLED
+                        : CSCConstants.CREDENTIAL_STATUS_SUSPENDED)
                 .cert(certDetails)
                 .key(keyInfo)
                 .pin(pinInfo)
                 .authMode("explicit")
+                .scal("1")
+                .multisign(1)
                 .build();
     }
 

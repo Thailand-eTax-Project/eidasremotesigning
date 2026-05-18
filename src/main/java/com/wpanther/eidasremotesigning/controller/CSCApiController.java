@@ -68,17 +68,13 @@ public class CSCApiController {
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * Get information about a specific credential
-     */
     @PostMapping("/credentials/info")
     public ResponseEntity<CSCCertificateInfo> getCredentialInfo(
-            @Valid @RequestBody CSCCredentialsListRequest request,
-            @RequestParam String credentialID) {
-        log.debug("CSC API: Request for credential info, ID: {}, client: {}", 
-                credentialID, request.getClientId());
-        
-        CSCCertificateInfo response = cscApiService.getCredentialInfo(request, credentialID);
+            @Valid @RequestBody CSCCredentialsInfoRequest request) {
+        log.debug("CSC API: Request for credential info, ID: {}, client: {}",
+                request.getCredentialID(), request.getClientId());
+
+        CSCCertificateInfo response = cscApiService.getCredentialInfo(request);
         return ResponseEntity.ok(response);
     }
 
@@ -89,7 +85,7 @@ public ResponseEntity<CSCCertificateInfo> associateCertificate(
             request.getCertificateAlias(), request.getClientId());
     
     CSCCertificateInfo response = cscApiService.associateCertificate(request);
-    return ResponseEntity.created(URI.create("/csc/v2/credentials/info?credentialID=" + response.getId()))
+    return ResponseEntity.created(URI.create("/csc/v2/credentials/info?credentialID=" + response.getCredentialID()))
             .body(response);
 }
 
