@@ -173,7 +173,7 @@ public class XAdESSignHashIT {
 
         assertNotNull(sad, "SAD must not be null");
         assertFalse(sad.isBlank(), "SAD must not be blank");
-        assertTrue(json.has("transactionID"), "Response must include transactionID");
+        assertTrue(json.has("handle"), "Response must include handle");
     }
 
     @Test
