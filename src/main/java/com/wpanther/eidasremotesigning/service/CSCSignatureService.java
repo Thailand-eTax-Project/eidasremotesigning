@@ -338,7 +338,7 @@ public class CSCSignatureService {
                     .transactionID(transactionId)
                     .signedDocument(signedDocumentBase64)
                     .signedDocumentDigest(Base64.getEncoder().encodeToString(digestBytes))
-                    .signatureAlgorithm(signatureAlgorithm)
+                    .signatureAlgorithm(OIDMapper.toOidSigAlgo(signatureAlgorithm))
                     .build();
 
         } catch (SigningException se) {
