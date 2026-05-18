@@ -17,9 +17,6 @@ import jakarta.validation.constraints.NotBlank;
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class CSCBaseRequest {
-    @NotBlank(message = "clientId is required")
-    private String clientId;
-    
     // Credentials object for token PIN/OTP
     private Credentials credentials;
     

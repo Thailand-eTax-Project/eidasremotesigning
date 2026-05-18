@@ -14,9 +14,6 @@ import lombok.NoArgsConstructor;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class CSCAuthorizeRequest {
 
-    @NotBlank(message = "clientId is required")
-    private String clientId;
-
     private CSCBaseRequest.Credentials credentials;
 
     @NotBlank(message = "credentialID is required")

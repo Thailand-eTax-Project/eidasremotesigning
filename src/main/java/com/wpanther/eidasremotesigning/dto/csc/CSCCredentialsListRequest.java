@@ -17,12 +17,7 @@ import jakarta.validation.constraints.NotBlank;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class CSCCredentialsListRequest  {
-
-        // Fields from CSCBaseRequest
-        @NotBlank(message = "clientId is required")
-        private String clientId;
-        
-        private CSCBaseRequest.Credentials credentials;
+public class CSCCredentialsListRequest {
+    private CSCBaseRequest.Credentials credentials;
     private Integer maxResults;
 }

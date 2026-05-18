@@ -17,9 +17,6 @@ import jakarta.validation.constraints.NotBlank;
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class CSCVerifyRequest {
-    @NotBlank(message = "clientId is required")
-    private String clientId;
-    
     // Either signedDocument or documentDigest + signature must be provided
     private String signedDocument;
     
