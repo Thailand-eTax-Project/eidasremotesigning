@@ -28,7 +28,7 @@ public class CSCApiController {
     /**
      * Get information about this CSC service
      */
-    @GetMapping("/info")
+    @PostMapping("/info")
     public ResponseEntity<CSCInfoResponse> getInfo() {
         log.debug("CSC API: Request for service information");
 
@@ -43,12 +43,12 @@ public class CSCApiController {
                         "credentials/list",
                         "credentials/info",
                         "credentials/authorize",
-                        "credentials/authorizeStatus",
+                        "credentials/authorizeCheck",
                         "credentials/extendTransaction",
                         "signatures/signHash",
-                        "signatures/signDocument",
+                        "signatures/signDoc",
                         "signatures/timestamp",
-                        "signatures/status",
+                        "signatures/signPolling",
                         "signatures/validate"
                 ))
                 .build();

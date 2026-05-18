@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.ServletWebRequest;
@@ -28,6 +29,23 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleCertificateException(CertificateException ex) {
         log.error("Certificate error", ex);
         return createErrorResponse(ex.getMessage(), HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<Object> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex, WebRequest request) {
+        log.debug("Method not supported: {}", ex.getMethod());
+        String path = ((ServletWebRequest)request).getRequest().getRequestURI();
+        if (path.startsWith("/csc/v2/")) {
+            CSCErrorResponse errorResponse = CSCErrorResponse.builder()
+                    .error("invalid_request")
+                    .message("Request method '" + ex.getMethod() + "' is not supported")
+                    .status(HttpStatus.METHOD_NOT_ALLOWED.value())
+                    .path(path)
+                    .timestamp(Instant.now().toEpochMilli())
+                    .build();
+            return new ResponseEntity<>(errorResponse, HttpStatus.METHOD_NOT_ALLOWED);
+        }
+        return new ResponseEntity<>(ex.getMessage(), HttpStatus.METHOD_NOT_ALLOWED);
     }
 
     @ExceptionHandler(SigningException.class)

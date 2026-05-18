@@ -50,7 +50,7 @@ public class CSCAuthorizationController {
      * Check credential authorization status
      * Returns the current status of a credential authorization process
      */
-    @PostMapping("/authorizeStatus")
+    @PostMapping("/authorizeCheck")
     public ResponseEntity<CSCAuthorizeStatusResponse> getAuthorizeStatus(
             @Valid @RequestBody CSCAuthorizeStatusRequest request) {
         log.debug("CSC API: Authorization status request from client: {}", request.getClientId());

@@ -129,13 +129,33 @@ public class EidasRemoteSigningIT {
         }
 
         /**
+         * Test that /csc/v2/info accepts POST and rejects GET (CSC API v2.0 spec)
+         */
+        @Test
+        @Order(0)
+        public void testInfoEndpointIsPost() throws Exception {
+            mockMvc.perform(MockMvcRequestBuilders
+                    .post("/csc/v2/info")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{}"))
+                    .andExpect(status().isOk());
+
+            // GET should no longer work
+            mockMvc.perform(MockMvcRequestBuilders
+                    .get("/csc/v2/info"))
+                    .andExpect(status().isMethodNotAllowed());
+        }
+
+        /**
          * Test CSC API /info endpoint
          */
         @Test
         @Order(3)
         public void testServiceInfo() throws Exception {
                 MvcResult result = mockMvc.perform(MockMvcRequestBuilders
-                                .get("/csc/v2/info"))
+                                .post("/csc/v2/info")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{}"))
                                 .andExpect(status().isOk())
                                 .andReturn();
 
@@ -156,8 +176,8 @@ public class EidasRemoteSigningIT {
                 assertTrue(json.get("methods").isArray(), "methods must be an array");
 
                 String methodsText = json.get("methods").toString();
-                assertTrue(methodsText.contains("credentials/authorizeStatus"),
-                                "methods must include credentials/authorizeStatus");
+                assertTrue(methodsText.contains("credentials/authorizeCheck"),
+                                "methods must include credentials/authorizeCheck");
                 assertTrue(methodsText.contains("signatures/validate"),
                                 "methods must include signatures/validate");
 

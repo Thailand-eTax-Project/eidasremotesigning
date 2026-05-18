@@ -40,7 +40,7 @@ public class CSCSignatureController {
      * Remote document signing operation
      * Supports signing a complete document instead of just a hash
      */
-    @PostMapping("/signDocument")
+    @PostMapping("/signDoc")
     public ResponseEntity<CSCSignDocumentResponse> signDocument(
             @Valid @RequestBody CSCSignDocumentRequest request) {
         log.debug("CSC API: Document signature request for credential: {}, client: {}", 
@@ -54,7 +54,7 @@ public class CSCSignatureController {
      * Get signature status
      * Returns the current status of an asynchronous signing operation
      */
-    @PostMapping("/status")
+    @PostMapping("/signPolling")
     public ResponseEntity<CSCSignatureStatusResponse> getSignatureStatus(
             @Valid @RequestBody CSCSignatureStatusRequest request) {
         log.debug("CSC API: Signature status request for transactionID: {}, client: {}", 
