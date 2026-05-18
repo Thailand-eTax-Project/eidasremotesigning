@@ -55,16 +55,31 @@ public class CSCAuthorizationService {
             
             // Determine validity period (use default since validityPeriod removed from request)
             long validityPeriod = DEFAULT_VALIDITY_PERIOD;
-            
+
+            // Extract PIN from authData if provided
+            String storedPin = null;
+            if (request.getAuthData() != null) {
+                storedPin = request.getAuthData().stream()
+                        .filter(e -> "PIN".equals(e.getId()))
+                        .map(CSCAuthorizeRequest.AuthDataEntry::getValue)
+                        .findFirst()
+                        .orElse(null);
+            }
+
+            if (!"AWSKMS".equals(certificate.getStorageType()) && storedPin == null) {
+                throw new CertificateException(
+                        "PIN is required in authData for " + certificate.getStorageType() + " credentials");
+            }
+
             // Generate transaction ID
             String transactionId = UUID.randomUUID().toString();
-            
+
             // Generate Signature Activation Data (SAD) - a secure token for signing
             String sad = generateSignatureActivationData();
-            
+
             // Create expiration time
             Instant expiresAt = Instant.now().plusSeconds(validityPeriod);
-            
+
             // Set up transaction authorization
             TransactionAuthorization transaction = TransactionAuthorization.builder()
                     .id(transactionId)
@@ -74,18 +89,15 @@ public class CSCAuthorizationService {
                     .numSignatures(request.getNumSignatures())
                     .remainingSignatures(request.getNumSignatures())
                     .description(request.getDescription())
+                    .storedPin(storedPin)
                     .status("AUTHORIZATION_INITIALIZED")
                     .createdAt(Instant.now())
                     .expiresAt(expiresAt)
                     .build();
-            
+
             transactionRepository.save(transaction);
             log.debug("Created transaction authorization: {}", transactionId);
-            
-            // For PKCS#11 tokens, we use explicit authentication
-            // For BCFKS, we could use implicit if the client has already provided a password
-            String authMode = "PKCS11".equals(certificate.getStorageType()) ? "explicit" : "implicit";
-            
+
             // Build and return response
             return CSCAuthorizeResponse.builder()
                     .handle(transactionId)

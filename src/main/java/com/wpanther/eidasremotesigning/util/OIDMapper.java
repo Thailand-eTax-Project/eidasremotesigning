@@ -46,6 +46,13 @@ public final class OIDMapper {
                 "1.2.840.10045.4.3.3",
                 "1.2.840.10045.4.3.4"
         });
+
+        SIG_OID_TO_HASH_JCA.put("1.2.840.113549.1.1.11", "SHA-256");  // SHA256withRSA
+        SIG_OID_TO_HASH_JCA.put("1.2.840.113549.1.1.12", "SHA-384");  // SHA384withRSA
+        SIG_OID_TO_HASH_JCA.put("1.2.840.113549.1.1.13", "SHA-512");  // SHA512withRSA
+        SIG_OID_TO_HASH_JCA.put("1.2.840.10045.4.3.2",   "SHA-256");  // SHA256withECDSA
+        SIG_OID_TO_HASH_JCA.put("1.2.840.10045.4.3.3",   "SHA-384");  // SHA384withECDSA
+        SIG_OID_TO_HASH_JCA.put("1.2.840.10045.4.3.4",   "SHA-512");  // SHA512withECDSA
     }
 
     public static String toJcaHashAlgo(String oid) {

@@ -338,19 +338,25 @@ public class CSCSignatureService {
                     }
 
                     signedDocuments.add(signedDocumentBase64);
-                    signatureObjects.add(null); // DSS handles signature embedding
+                    // No signatureObject entry: EU DSS embeds the signature into the document
 
                     // Log successful signing
                     signingLogService.logSuccessfulSigning(validationRequest, jcaSigAlgo);
                 }
+
+                // Return response for full document signing (signature embedded by EU DSS)
+                return CSCSignDocumentResponse.builder()
+                        .documentWithSignature(signedDocuments)
+                        .build();
+
             } else {
                 throw new SigningException("Either documentDigests or documents must be provided");
             }
 
-            // Return response
+            // Return response for digest-only signing
             return CSCSignDocumentResponse.builder()
                     .documentWithSignature(signedDocuments.isEmpty() ? null : signedDocuments)
-                    .signatureObject(signatureObjects)
+                    .signatureObject(signatureObjects.isEmpty() ? null : signatureObjects)
                     .responseID(UUID.randomUUID().toString())
                     .build();
 

@@ -157,6 +157,11 @@ public class XAdESSignHashIT {
         CSCAuthorizeRequest authorizeRequest = CSCAuthorizeRequest.builder()
                 .credentialID(credentialId)
                 .numSignatures(1)
+                .authData(java.util.List.of(
+                        CSCAuthorizeRequest.AuthDataEntry.builder()
+                                .id("PIN")
+                                .value(KEYSTORE_PASSWORD)
+                                .build()))
                 .build();
 
         MvcResult result = mockMvc.perform(MockMvcRequestBuilders

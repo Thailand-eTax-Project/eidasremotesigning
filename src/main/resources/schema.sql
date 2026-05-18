@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS transaction_authorizations (
     num_signatures INTEGER,
     remaining_signatures INTEGER,
     description VARCHAR(500),
+    -- SECURITY NOTE: stored_pin is plaintext; encrypt before persistence in production
+    stored_pin VARCHAR(255),
     status VARCHAR(50) NOT NULL,
     created_at TIMESTAMP NOT NULL,
     expires_at TIMESTAMP NOT NULL,
