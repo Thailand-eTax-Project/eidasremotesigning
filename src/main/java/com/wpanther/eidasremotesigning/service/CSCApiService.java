@@ -9,6 +9,8 @@ import com.wpanther.eidasremotesigning.exception.CertificateException;
 import com.wpanther.eidasremotesigning.exception.SigningException;
 import com.wpanther.eidasremotesigning.repository.OAuth2ClientRepository;
 import com.wpanther.eidasremotesigning.repository.SigningCertificateRepository;
+import com.wpanther.eidasremotesigning.util.CSCConstants;
+import com.wpanther.eidasremotesigning.util.OIDMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -21,6 +23,8 @@ import java.security.PrivateKey;
 import java.security.Signature;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -78,61 +82,23 @@ public class CSCApiService {
         return pkcs11Service;
     }
 
-    /**
-     * List credentials (certificates) available for the client
-     */
     @Transactional(readOnly = true)
     public CSCCredentialsListResponse listCredentials(CSCCredentialsListRequest request) {
         try {
             String clientId = request.getClientId();
-
-            // Get PIN from request if provided
-            String pin = extractPinFromRequest(request);
-
-            // Find all certificates for the client
             List<SigningCertificate> certificates = certificateRepository.findByClientId(clientId);
 
-            // Convert to CSC certificate info
-            List<CSCCertificateInfo> cscCertificates = new ArrayList<>();
+            List<String> credentialIds = certificates.stream()
+                    .map(SigningCertificate::getId)
+                    .collect(java.util.stream.Collectors.toList());
 
-            for (SigningCertificate cert : certificates) {
-                try {
-                    X509Certificate x509Cert;
-
-                    if ("PKCS11".equals(cert.getStorageType())) {
-                        // For PKCS#11 certs, we need the PIN
-                        if (pin == null) {
-                            // Skip PKCS#11 certs if no PIN provided, but continue with others
-                            log.debug("Skipping PKCS#11 certificate (no PIN provided): {}", cert.getId());
-                            continue;
-                        }
-                        x509Cert = requirePkcs11Service().getCertificate(cert.getCertificateAlias(), pin);
-                    } else if ("AWSKMS".equals(cert.getStorageType())) {
-                        // For AWS KMS certs, load from stored certificate data
-                        byte[] certBytes = Base64.getDecoder().decode(cert.getCertificateData());
-                        java.io.ByteArrayInputStream bis = new java.io.ByteArrayInputStream(certBytes);
-                        java.security.cert.CertificateFactory cf = java.security.cert.CertificateFactory.getInstance("X.509");
-                        x509Cert = (X509Certificate) cf.generateCertificate(bis);
-                    } else {
-                        // For BCFKS certs
-                        x509Cert = certificateService.loadCertificateFromBCFKS(cert);
-                    }
-
-                    cscCertificates.add(mapToCscCertificateInfo(cert, x509Cert));
-                } catch (Exception e) {
-                    // Log error but continue with other certificates
-                    log.error("Error loading certificate {}: {}", cert.getId(), e.getMessage());
-                }
-            }
-
-            // Apply maxResults limit if provided
-            if (request.getMaxResults() != null && request.getMaxResults() > 0 &&
-                    cscCertificates.size() > request.getMaxResults()) {
-                cscCertificates = cscCertificates.subList(0, request.getMaxResults());
+            if (request.getMaxResults() != null && request.getMaxResults() > 0
+                    && credentialIds.size() > request.getMaxResults()) {
+                credentialIds = credentialIds.subList(0, request.getMaxResults());
             }
 
             return CSCCredentialsListResponse.builder()
-                    .certificates(cscCertificates)
+                    .credentialIDs(credentialIds)
                     .build();
         } catch (Exception e) {
             log.error("Error in listCredentials", e);
