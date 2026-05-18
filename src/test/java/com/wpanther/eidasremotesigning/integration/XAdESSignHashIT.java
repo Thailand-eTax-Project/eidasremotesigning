@@ -157,7 +157,7 @@ public class XAdESSignHashIT {
         CSCAuthorizeRequest authorizeRequest = CSCAuthorizeRequest.builder()
                 .clientId(clientId)
                 .credentialID(credentialId)
-                .numSignatures("1")
+                .numSignatures(1)
                 .build();
 
         MvcResult result = mockMvc.perform(MockMvcRequestBuilders
@@ -190,15 +190,6 @@ public class XAdESSignHashIT {
         assertNotNull(digest, "digest must not be null");
 
         // Build the sign request
-        SignatureAttributes signatureAttributes = SignatureAttributes.builder()
-                .signatureType("XAdES")
-                .build();
-
-        SignatureData signatureData = SignatureData.builder()
-                .hashToSign(new String[]{digest})
-                .signatureAttributes(signatureAttributes)
-                .build();
-
         CSCBaseRequest.PIN pin = CSCBaseRequest.PIN.builder()
                 .value(KEYSTORE_PASSWORD)
                 .build();
@@ -212,8 +203,9 @@ public class XAdESSignHashIT {
                 .credentialID(credentialId)
                 .SAD(sad)
                 .credentials(credentials)
-                .hashAlgo("SHA-256")
-                .signatureData(signatureData)
+                .hashAlgo("2.16.840.1.101.3.4.2.1")
+                .hash(new String[]{digest})
+                .operationMode("S")
                 .build();
 
         MvcResult result = mockMvc.perform(MockMvcRequestBuilders
