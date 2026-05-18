@@ -72,8 +72,20 @@ public class CSCSignatureController {
     public ResponseEntity<CSCTimestampResponse> createTimestamp(
             @Valid @RequestBody CSCTimestampRequest request) {
         log.debug("CSC API: Timestamp request from client: {}", request.getClientId());
-        
+
         CSCTimestampResponse response = cscSignatureService.createTimestamp(request);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Validate a signature
+     */
+    @PostMapping("/validate")
+    public ResponseEntity<CSCVerifyResponse> validateSignature(
+            @Valid @RequestBody CSCVerifyRequest request) {
+        log.debug("CSC API: Signature validation request from client: {}", request.getClientId());
+
+        CSCVerifyResponse response = cscSignatureService.validateSignature(request);
         return ResponseEntity.ok(response);
     }
 }

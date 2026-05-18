@@ -26,7 +26,7 @@ public class CSCVerifyRequest {
     private String documentDigest;
     private String signature;
     
-    @NotBlank(message = "hashAlgo is required when using documentDigest")
+    @NotBlank(message = "hashAlgo is required")
     private String hashAlgo;
     
     private String signatureAlgorithm;

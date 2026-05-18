@@ -579,6 +579,70 @@ public class CSCSignatureService {
 
 
     /**
+     * Validate a signature against a certificate
+     */
+    public CSCVerifyResponse validateSignature(CSCVerifyRequest request) {
+        try {
+            // Decode certificate from Base64 DER
+            byte[] certBytes = Base64.getDecoder().decode(request.getCertificate());
+            java.security.cert.CertificateFactory cf = java.security.cert.CertificateFactory.getInstance("X.509");
+            X509Certificate certificate = (X509Certificate) cf.generateCertificate(
+                    new java.io.ByteArrayInputStream(certBytes));
+
+            // Decode signature from Base64
+            byte[] signatureBytes = Base64.getDecoder().decode(request.getSignature());
+
+            // Compute or decode document digest
+            byte[] digestBytes;
+            String hashAlgo = OIDMapper.toJcaHashAlgo(request.getHashAlgo());
+            if (request.getDocumentDigest() != null && !request.getDocumentDigest().isBlank()) {
+                digestBytes = Base64.getDecoder().decode(request.getDocumentDigest());
+            } else {
+                throw new SigningException("documentDigest is required for signature validation");
+            }
+
+            // Determine JCA signature algorithm
+            String jcaSigAlgo;
+            if (request.getSignatureAlgorithm() != null && !request.getSignatureAlgorithm().isBlank()) {
+                jcaSigAlgo = OIDMapper.toJcaSigAlgo(request.getSignatureAlgorithm());
+            } else {
+                throw new SigningException("signatureAlgorithm is required for signature validation");
+            }
+
+            // Verify using certificate's public key
+            java.security.Signature sig = java.security.Signature.getInstance(jcaSigAlgo);
+            sig.initVerify(certificate.getPublicKey());
+            sig.update(digestBytes);
+            boolean valid = sig.verify(signatureBytes);
+
+            // Check certificate validity dates
+            String certStatus;
+            try {
+                certificate.checkValidity();
+                certStatus = "valid";
+            } catch (java.security.cert.CertificateExpiredException e) {
+                certStatus = "expired";
+                valid = false;
+            } catch (java.security.cert.CertificateNotYetValidException e) {
+                certStatus = "expired";
+                valid = false;
+            }
+
+            return CSCVerifyResponse.builder()
+                    .valid(valid)
+                    .certificateStatus(certStatus)
+                    .signedBy(certificate.getSubjectX500Principal().getName())
+                    .build();
+
+        } catch (SigningException se) {
+            throw se;
+        } catch (Exception e) {
+            log.error("Error in validateSignature", e);
+            throw new SigningException("Failed to validate signature: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * Maps a hash algorithm name to DSS DigestAlgorithm enum
      */
     private DigestAlgorithm mapHashAlgorithm(String hashAlgo) {
