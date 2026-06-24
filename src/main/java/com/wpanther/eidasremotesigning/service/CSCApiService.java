@@ -426,6 +426,20 @@ public class CSCApiService {
         Integer keyLen = getKeySize(x509Cert.getPublicKey());
         String[] sigOids = OIDMapper.supportedSigOidsForKeyAlgo(keyAlgoJca);
 
+        // Spec §11.4: key.curve required for EC keys. Extract the named curve OID from SubjectPublicKeyInfo.
+        String curveOid = null;
+        if ("EC".equals(keyAlgoJca)) {
+            try {
+                org.bouncycastle.asn1.x509.SubjectPublicKeyInfo spki =
+                        org.bouncycastle.asn1.x509.SubjectPublicKeyInfo.getInstance(
+                                x509Cert.getPublicKey().getEncoded());
+                curveOid = org.bouncycastle.asn1.ASN1ObjectIdentifier.getInstance(
+                        spki.getAlgorithm().getParameters()).getId();
+            } catch (Exception e) {
+                log.debug("Could not extract EC curve OID from public key of cert {}", cert.getId(), e);
+            }
+        }
+
         String[] keyUsage = null;
         boolean[] keyUsageBits = x509Cert.getKeyUsage();
         if (keyUsageBits != null) {
@@ -455,6 +469,7 @@ public class CSCApiService {
                 .status(CSCConstants.KEY_STATUS_ENABLED)
                 .algo(sigOids)
                 .len(keyLen)
+                .curve(curveOid)
                 .build();
 
         // Build auth object for PIN-based credentials

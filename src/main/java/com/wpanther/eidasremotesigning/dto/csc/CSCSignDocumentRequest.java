@@ -15,10 +15,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@AtLeastOneOf(
-    fields = {"documentDigests", "documents"},
-    message = "Either documentDigests or documents must be provided"
-)
+@AtLeastOneOf(fields = {"documentDigests", "documents"})
 public class CSCSignDocumentRequest {
 
     private String credentialID;

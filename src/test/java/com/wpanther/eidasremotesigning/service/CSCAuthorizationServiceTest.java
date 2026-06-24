@@ -2,8 +2,12 @@ package com.wpanther.eidasremotesigning.service;
 
 import com.wpanther.eidasremotesigning.dto.csc.CSCAuthorizeRequest;
 import com.wpanther.eidasremotesigning.dto.csc.CSCAuthorizeResponse;
+import com.wpanther.eidasremotesigning.dto.csc.CSCAuthorizeStatusRequest;
+import com.wpanther.eidasremotesigning.dto.csc.CSCAuthorizeStatusResponse;
 import com.wpanther.eidasremotesigning.entity.SigningCertificate;
 import com.wpanther.eidasremotesigning.entity.TransactionAuthorization;
+import com.wpanther.eidasremotesigning.exception.SigningException;
+import com.wpanther.eidasremotesigning.exception.SigningInProgressException;
 import com.wpanther.eidasremotesigning.repository.SigningCertificateRepository;
 import com.wpanther.eidasremotesigning.repository.TransactionAuthorizationRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,13 +21,16 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class CSCAuthorizationServiceTest {
@@ -40,9 +47,10 @@ class CSCAuthorizationServiceTest {
     @BeforeEach
     void setUpSecurityContext() {
         Authentication auth = mock(Authentication.class);
-        when(auth.getName()).thenReturn("test-client");
+        // lenient: not all tests call currentClientId(), but SecurityContextHolder is shared state
+        lenient().when(auth.getName()).thenReturn("test-client");
         SecurityContext ctx = mock(SecurityContext.class);
-        when(ctx.getAuthentication()).thenReturn(auth);
+        lenient().when(ctx.getAuthentication()).thenReturn(auth);
         SecurityContextHolder.setContext(ctx);
 
         // Inject SecureRandom via reflection (field injection)
@@ -82,6 +90,70 @@ class CSCAuthorizationServiceTest {
         assertThat(response.getHandle())
                 .as("handle must be null for synchronous PIN auth (spec §11.6)")
                 .isNull();
+    }
+
+    @Test
+    void getAuthorizeStatus_authorizedTransaction_returnsSadAndExpiresIn() {
+        TransactionAuthorization authorized = TransactionAuthorization.builder()
+                .id("handle-1")
+                .clientId("test-client")
+                .sad("active-sad")
+                .status("AUTHORIZED")
+                .expiresAt(Instant.now().plusSeconds(300))
+                .build();
+
+        when(transactionRepository.findById("handle-1")).thenReturn(Optional.of(authorized));
+
+        CSCAuthorizeStatusRequest request = CSCAuthorizeStatusRequest.builder()
+                .handle("handle-1")
+                .build();
+
+        CSCAuthorizeStatusResponse response = service.getAuthorizeStatus(request);
+
+        assertThat(response.getSAD()).isEqualTo("active-sad");
+        assertThat(response.getExpiresIn()).isPositive();
+    }
+
+    @Test
+    void getAuthorizeStatus_pendingTransaction_throwsSigningInProgressException() {
+        TransactionAuthorization pending = TransactionAuthorization.builder()
+                .id("handle-pending")
+                .clientId("test-client")
+                .sad("pending-sad")
+                .status("AUTHORIZATION_INITIALIZED")
+                .expiresAt(Instant.now().plusSeconds(300))
+                .build();
+
+        when(transactionRepository.findById("handle-pending")).thenReturn(Optional.of(pending));
+
+        CSCAuthorizeStatusRequest request = CSCAuthorizeStatusRequest.builder()
+                .handle("handle-pending")
+                .build();
+
+        assertThatThrownBy(() -> service.getAuthorizeStatus(request))
+                .isInstanceOf(SigningInProgressException.class)
+                .as("AUTHORIZATION_INITIALIZED status must throw SigningInProgressException for 202 response");
+    }
+
+    @Test
+    void getAuthorizeStatus_expiredTransaction_throwsSigningException() {
+        TransactionAuthorization expired = TransactionAuthorization.builder()
+                .id("handle-expired")
+                .clientId("test-client")
+                .sad("old-sad")
+                .status("AUTHORIZED")
+                .expiresAt(Instant.now().minusSeconds(60))
+                .build();
+
+        when(transactionRepository.findById("handle-expired")).thenReturn(Optional.of(expired));
+
+        CSCAuthorizeStatusRequest request = CSCAuthorizeStatusRequest.builder()
+                .handle("handle-expired")
+                .build();
+
+        assertThatThrownBy(() -> service.getAuthorizeStatus(request))
+                .isInstanceOf(SigningException.class)
+                .hasMessageContaining("expired");
     }
 
     @Test

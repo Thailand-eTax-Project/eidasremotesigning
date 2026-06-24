@@ -62,6 +62,8 @@ public class CSCAuthorizationController {
             CSCAuthorizeStatusResponse response = cscAuthorizationService.getAuthorizeStatus(request);
             return ResponseEntity.ok(response);
         } catch (com.wpanther.eidasremotesigning.exception.SigningInProgressException e) {
+            // CSC spec §11.7 does not define a 202 body; we return an error-shaped body
+            // for consistency with signPolling (§11.12) and easier client error handling.
             return ResponseEntity.accepted().body(
                     com.wpanther.eidasremotesigning.dto.csc.CSCAuthorizePendingResponse.builder()
                             .error("accepted_request")
