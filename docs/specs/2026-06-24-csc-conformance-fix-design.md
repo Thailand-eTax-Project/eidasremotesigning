@@ -32,7 +32,7 @@ Changes are ordered by dependency: DTOs must be correct before the services that
 
 **F1 — `oauth2` type change**
 - Change field type: `OAuth2Info oauth2` → `String oauth2`
-- The value is the base URI of the OAuth2 authorization server (e.g. `"http://localhost:9000"`). Clients discover individual endpoints by appending standard paths or via RFC 8414 discovery.
+- The value is the base URI of the OAuth2 authorization server (e.g. `"http://localhost:9000"`). Spec §11.1 defines two alternatives: `oauth2` (base URI, used here) or `oauth2Issuer` (RFC 8414 issuer URL for discovery). This service uses `oauth2` since it hosts its own authorization server. `oauth2Issuer` is not implemented.
 - Delete the `OAuth2Info` inner class entirely.
 
 **F2 — `envelope_properties` type change**
@@ -93,6 +93,7 @@ Changes are ordered by dependency: DTOs must be correct before the services that
   - `Boolean authInfo` (default `false`)
   - `Boolean onlyValid` (default `false`)
   - `String lang`
+  - `String clientData` (optional, passed through for debugging/correlation)
 
 ### Tests (Layer 1)
 - **Unit**: JSON serialization tests for each modified DTO — assert field names serialize to spec-defined names and removed fields are absent.
@@ -105,9 +106,13 @@ Changes are ordered by dependency: DTOs must be correct before the services that
 
 ### `CSCAuthorizationService.extendTransaction()` (F6)
 
-**Problem:** Returns only `expiresIn`; `SAD` field is always null — breaks multi-signature PDF flows entirely.
+**Problem:** `CSCExtendTransactionRequest` is missing `credentialID` (REQUIRED per spec §11.9), and the response never returns the new `SAD`.
 
-**Fix:**
+**Fix — request DTO (`CSCExtendTransactionRequest`):**
+- Add `@NotBlank String credentialID` field. The spec lists `credentialID` as REQUIRED alongside `SAD` and the optional `hashes[]`/`hashAlgorithmOID`.
+
+**Fix — service:**
+- Use `credentialID` from the request to look up the credential (needed for SCAL2 hash binding and key access).
 - After validating the current SAD, generate a new SAD using the same mechanism as `authorizeCredential()` (create a new `TransactionAuthorization` entity, persist it, return its `sad` value).
 - Set `response.setSAD(newSad)` before returning.
 - Invalidate (or decrement) the old SAD's remaining signatures so it cannot be reused independently.
@@ -123,11 +128,13 @@ Changes are ordered by dependency: DTOs must be correct before the services that
 
 **Problem:** `returnValidationInfo` is parsed but never used; `validationInfo` is never populated.
 
-**Fix:**
-- After signing, if `request.getReturnValidationInfo() == Boolean.TRUE`:
-  - Extract OCSP responses, CRLs, and extra certificates from the EU DSS `CertificateVerifier` / `ValidationData` available after the signing operation.
-  - Populate `validationInfo.ocsp[]`, `validationInfo.crl[]`, `validationInfo.certificates[]` as Base64-encoded DER structures.
-- If `returnValidationInfo` is false/null, leave `validationInfo` null.
+**Constraint:** EU DSS `PAdESService` at `SignatureLevel.PAdES_BASELINE_B` does not automatically produce a `ValidationData` container (OCSP/CRL collection requires LT-level or an explicit `CertificateVerifier` post-signing call). Implementing this correctly requires a dedicated research spike into DSS `CertificateVerifier.setOcspSource()` / `CertificateVerifier.setCrlSource()` and post-signing validation extraction. This is out of scope for this conformance pass.
+
+**Fix (simplification):**
+- Accept `returnValidationInfo` in the request DTO (already present) — no validation error.
+- When `returnValidationInfo=true`, log a warning and return `validationInfo: null` in the response.
+- Add a `// TODO: implement validationInfo extraction via DSS CertificateVerifier` comment at the relevant call site.
+- Test: assert that `returnValidationInfo=true` does not throw and returns a valid response (with null `validationInfo`).
 
 ### `CSCApiService.mapToCscCertificateInfo()` (W2 — `cert/status`)
 
@@ -139,9 +146,10 @@ try {
 } catch (CertificateExpiredException e) {
     certDetails.setStatus("expired");
 } catch (CertificateNotYetValidException e) {
-    certDetails.setStatus("valid"); // not yet valid treated as valid per spec (not a defined status)
+    // Spec §11.4/11.5 defines: "valid", "expired", "revoked", "suspended" only.
+    // "not yet valid" has no defined mapping — leave status null (field omitted from response).
 }
-// Revocation (revoked/suspended) requires CRL/OCSP — not implemented; leave as "valid"
+// Revocation (revoked/suspended) requires CRL/OCSP — not implemented; field left null for those states.
 ```
 
 ### `OIDMapper` (W8 — RSASSA-PSS)
@@ -167,7 +175,7 @@ try {
 ### Tests (Layer 2)
 - **Unit** (`CSCAuthorizationServiceTests`): `extendTransactionReturnsSAD()` — assert non-null SAD in response; `extendTransactionInvalidatesOldSAD()` — assert old SAD no longer accepted after extend.
 - **Unit** (`CSCSignatureServiceTests`): `signDocSyncDoesNotReturnResponseID()` — assert `responseID` null on sync response; `signDocAsyncReturnsResponseID()` — assert `responseID` non-null on async response.
-- **Unit** (`CSCSignatureServiceTests`): `signDocPopulatesValidationInfoWhenRequested()` — assert `validationInfo` non-null when `returnValidationInfo=true`; `signDocOmitsValidationInfoByDefault()`.
+- **Unit** (`CSCSignatureServiceTests`): `signDocWithReturnValidationInfoTrueDoesNotThrow()` — assert valid response returned (with null `validationInfo`) when `returnValidationInfo=true`; `signDocOmitsValidationInfoByDefault()`.
 - **Unit** (`OIDMapperTests`): `rsaPssOidMapsToJca()` and `rsaPssJcaMapsToOid()`.
 - **Unit** (`CSCApiServiceTests`): `listCredentialsWithCredentialInfo()`, `listCredentialsOnlyValid()`, `getCredentialInfoCertificatesNone()`, `getCredentialInfoCertificatesSingle()`, `getCredentialInfoCertificatesChain()`.
 
@@ -179,13 +187,12 @@ try {
 
 **`logo`:** Read from `@Value("${app.csc.logo-url:http://localhost:9000/logo.png}") String logoUrl` and set on the response.
 
-**`envelope_properties`:** Build as `List<List<String>>` matching the `formats` list order:
+**`envelope_properties`:** Build as `List<List<String>>` matching the `formats` list order. Only advertise formats the service actually implements (PAdES and XAdES — CAdES is not implemented and must not appear):
 ```java
-List<String> formats = List.of("P", "X", "C");
+List<String> formats = List.of("P", "X");
 List<List<String>> envelopeProps = List.of(
-    List.of("Certification", "Revision"),      // P = PAdES
-    List.of("Enveloped", "Enveloping", "Detached"), // X = XAdES
-    List.of("Detached", "Attached", "Parallel")     // C = CAdES
+    List.of("Certification", "Revision"),           // P = PAdES
+    List.of("Enveloped", "Enveloping", "Detached")  // X = XAdES
 );
 ```
 
@@ -216,7 +223,21 @@ if (response.getSAD() != null) {
 
 ### `CSCSignatureController.getSignatureStatus()` (F9)
 
-**Fix:**
+**Problem (blocker):** The original design incorrectly returned HTTP 400 for in-progress operations. Spec §11.12 error table explicitly mandates **HTTP 202** with `"accepted_request"` when the prior async request is still processing. Using 400 breaks every spec-compliant polling client. Additionally, `"accepted_request"` is a polling status, not an error — stuffing it into `CSCErrorResponse` is semantically wrong.
+
+**Fix — new response DTO `CSCSignPollingPendingResponse`** (new file):
+```java
+public class CSCSignPollingPendingResponse {
+    @JsonProperty("error")
+    private final String error = "accepted_request";
+
+    @JsonProperty("error_description")
+    private String errorDescription;
+}
+```
+This matches the spec wire format (`{"error":"accepted_request","error_description":"..."}`) while keeping the type distinct from `CSCErrorResponse` used for actual errors.
+
+**Fix — controller:**
 ```java
 AsyncOperation op = asyncOperationService.getOperation(request.getRequestID());
 if (op == null) {
@@ -224,28 +245,31 @@ if (op == null) {
 }
 switch (op.getStatus()) {
     case CREATED, PROCESSING ->
-        return ResponseEntity.status(400)
-            .body(new CSCErrorResponse("accepted_request",
+        return ResponseEntity.status(202)                          // spec §11.12: 202, not 400
+            .body(new CSCSignPollingPendingResponse(
                 "The previous async request has been accepted but not yet completed"));
     case COMPLETED ->
         return ResponseEntity.ok(buildSignPollingResponse(op));
-    case FAILED, EXPIRED ->
+    case FAILED ->
         return ResponseEntity.status(400)
-            .body(new CSCErrorResponse("signing_error", "Async signing operation failed or expired"));
+            .body(new CSCErrorResponse("signing_error", "Async signing operation failed"));
+    case EXPIRED ->
+        return ResponseEntity.status(400)
+            .body(new CSCErrorResponse("invalid_request", "Async signing operation has expired"));
 }
 ```
 
 ### Tests (Layer 3)
 - **Integration** (`EidasRemoteSigningIT` or new `CSCAuthorizationIT`): `authorizeWithPinReturns200WithSAD()`, `authorizeWithOOBReturns202WithHandle()`.
 - **Integration**: `authorizeCheckPendingReturns202()`, `authorizeCheckCompleteReturns200WithSAD()`.
-- **Integration**: `signPollingInProgressReturns400AcceptedRequest()`, `signPollingCompletedReturns200WithSignatures()`.
+- **Integration**: `signPollingInProgressReturns202AcceptedRequest()`, `signPollingCompletedReturns200WithSignatures()`.
 - **Unit** (`CSCApiControllerTests`): `infoResponseHasLogoField()`, `infoResponseEnvelopePropertiesIsNestedArray()`.
 
 ---
 
 ## Layer 4: OAuth2
 
-### New `POST /csc/v2/oauth2/revoke` endpoint (F13)
+### New `POST /csc/v2/oauth2/revoke` endpoint (F13 — spec §8.4.5)
 
 **`CSCOAuth2Controller`:**
 ```java
@@ -322,6 +346,8 @@ Add to `application-test.yml`: same default (avoids null in tests).
 | `dto/CSCCertificateInfo.java` | W1 |
 | `validation/AtLeastOneOf.java` (new) | F11 custom constraint annotation |
 | `validation/AtLeastOneOfValidator.java` (new) | F11 custom constraint validator |
+| `dto/csc/CSCSignPollingPendingResponse.java` (new) | F9 dedicated in-progress response DTO |
+| `dto/csc/CSCExtendTransactionRequest.java` | F6 add `credentialID` field |
 | `service/CSCAuthorizationService.java` | F6 |
 | `service/CSCSignatureService.java` | F10, W9 |
 | `service/CSCApiService.java` | W2, W10, F14 wire-up |
