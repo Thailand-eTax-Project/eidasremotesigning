@@ -13,6 +13,7 @@ target/
 .settings
 .springBeans
 .sts4-cache
+.superpowers
 
 ### IntelliJ IDEA ###
 .idea
@@ -35,3 +36,5 @@ build/
 
 ### Superpowers (local only) ###
 docs/superpowers/
+docs/plans
+docs/specs

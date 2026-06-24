@@ -319,28 +319,26 @@ curl -X POST http://localhost:9000/csc/v2/signatures/signPolling \
          }'
 ```
 
-**Response (while processing):**
+**Response (HTTP 202 — still in progress, per CSC spec §11.12):**
 ```json
 {
-  "status": "PROCESSING"
+  "error": "accepted_request",
+  "error_description": "The signing operation is still in progress"
 }
 ```
 
-**Response (when complete):**
+**Response (HTTP 200 — completed):**
 ```json
 {
-  "status": "COMPLETED",
-  "signatures": ["base64_encoded_signature"],
   "DocumentWithSignature": ["base64_encoded_signed_document"],
   "SignatureObject": ["base64_detached_signature"]
 }
 ```
 
-**Possible Status Values:**
-- `PROCESSING` - Operation in progress
-- `COMPLETED` - Successfully signed
-- `FAILED` - Operation failed (check `errorMessage` field)
-- `EXPIRED` - Operation timed out
+**HTTP Status Semantics:**
+- `202 Accepted` — Operation still in progress; continue polling
+- `200 OK` — Operation complete; response body contains the signature data
+- `4xx` — Operation failed or expired; see error response body
 
 ### Example: Create a Timestamp
 
@@ -396,6 +394,7 @@ The CSC API v2.0 uses OID strings for algorithm fields (`hashAlgorithmOID`, `sig
 | `1.2.840.113549.1.1.11` | SHA256withRSA |
 | `1.2.840.113549.1.1.12` | SHA384withRSA |
 | `1.2.840.113549.1.1.13` | SHA512withRSA |
+| `1.2.840.113549.1.1.10` | RSASSA-PSS |
 | `1.2.840.10045.4.3.2` | SHA256withECDSA |
 | `1.2.840.10045.4.3.3` | SHA384withECDSA |
 | `1.2.840.10045.4.3.4` | SHA512withECDSA |
@@ -453,8 +452,8 @@ The application is built on Spring Boot and follows a standard layered architect
 The service implements a transaction-based authorization model for secure signing per the CSC API v2.0 specification:
 
 1. Client authorizes a credential for signing (`/csc/v2/credentials/authorize`)
-2. Service returns a **Signature Activation Data (SAD)** token and transaction ID
-3. Client uses the SAD token in `signHash` or `signDocument` requests (alternative to PIN)
+2. Service returns a **Signature Activation Data (SAD)** token (sync) or a `handle` for async polling
+3. Client uses the SAD token in `signHash` or `signDoc` requests (alternative to PIN)
 4. Transaction enforces constraints (number of signatures, validity period)
 5. Each signing operation decrements the remaining signature count
 
@@ -571,8 +570,8 @@ The service provides full asynchronous signing support for high-throughput envir
 1. **Submit Request**: Set `"operationMode": "A"` in any signing request
 2. **Receive Operation ID**: Server returns immediately with `responseID`
 3. **Background Processing**: Signing occurs in thread pool
-4. **Poll Status**: Use `/csc/v2/signatures/signPolling` with the `responseID`
-5. **Retrieve Results**: Full signature data returned when `status: COMPLETED`
+4. **Poll Status**: Use `/csc/v2/signatures/signPolling` with `requestID` set to the `responseID` value
+5. **Retrieve Results**: Full signature data returned when the poll returns HTTP 200 (not 202)
 
 **Operation Lifecycle:**
 - Operations expire after 30 minutes (configurable)
