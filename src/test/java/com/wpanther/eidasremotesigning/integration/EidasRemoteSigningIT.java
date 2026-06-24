@@ -217,10 +217,10 @@ public class EidasRemoteSigningIT {
                 assertTrue(info.has("conformance_levels"), "missing conformance_levels");
                 assertTrue(info.get("conformance_levels").isArray(), "conformance_levels is not an array");
 
-                // oauth2
+                // oauth2 — spec §11.1: plain String (OAuth2 server base URL), not an object
                 assertTrue(info.has("oauth2"), "missing oauth2");
-                assertTrue(info.get("oauth2").has("authorization_endpoint"), "missing oauth2.authorization_endpoint");
-                assertTrue(info.get("oauth2").has("token_endpoint"), "missing oauth2.token_endpoint");
+                assertTrue(info.get("oauth2").isTextual(), "oauth2 must be a String per spec §11.1");
+                assertFalse(info.get("oauth2").asText().isBlank(), "oauth2 must not be blank");
 
                 // asynchronousOperationMode
                 assertTrue(info.has("asynchronousOperationMode"), "missing asynchronousOperationMode");
