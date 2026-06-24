@@ -31,6 +31,8 @@
 - `src/test/java/com/wpanther/eidasremotesigning/dto/CSCSignatureDtoTest.java` (T2, T3, T4)
 - `src/test/java/com/wpanther/eidasremotesigning/validation/AtLeastOneOfValidatorTest.java` (T5)
 - `src/test/java/com/wpanther/eidasremotesigning/service/CSCAuthorizationServiceTest.java` (T7)
+- `src/test/java/com/wpanther/eidasremotesigning/service/CSCApiServiceTest.java` (T11)
+- `src/test/java/com/wpanther/eidasremotesigning/service/CSCOAuth2ServiceTest.java` (T12)
 
 **Modified:**
 - `src/main/java/com/wpanther/eidasremotesigning/dto/csc/CSCInfoResponse.java` (F1, F2, F3)
@@ -55,6 +57,7 @@
 - `src/main/java/com/wpanther/eidasremotesigning/controller/CSCAuthorizationController.java` (F4, F5)
 - `src/main/java/com/wpanther/eidasremotesigning/controller/CSCSignatureController.java` (F9)
 - `src/main/java/com/wpanther/eidasremotesigning/controller/CSCOAuth2Controller.java` (F13, W3)
+- `src/main/java/com/wpanther/eidasremotesigning/exception/GlobalExceptionHandler.java` (F9 — add SigningInProgressException handler)
 - `src/main/resources/application.yml` (F3)
 - `src/test/resources/application-test.yml` (F3)
 - `src/test/java/com/wpanther/eidasremotesigning/util/OIDMapperTest.java` (W8)
@@ -272,7 +275,13 @@ public ResponseEntity<CSCInfoResponse> getInfo() {
                     .build())
             .signature_formats(CSCInfoResponse.SignatureFormats.builder()
                     .formats(List.of("P", "X"))
-                    .envelope_properties(List.of(List.of("b64"), List.of("b64")))
+                    // Per CSC spec §11.1: one inner array per format entry.
+                    // "P" (PAdES) supports "Certification" and "Revision" envelope properties.
+                    // "X" (XAdES) supports "Enveloped", "Enveloping", "Detached".
+                    .envelope_properties(List.of(
+                            List.of("Certification", "Revision"),
+                            List.of("Enveloped", "Enveloping", "Detached")
+                    ))
                     .build())
             .conformance_levels(List.of("Ades-B-B"))
             .oauth2(cscBaseUrl)
@@ -568,7 +577,7 @@ git commit -m "fix(W5): remove non-spec signatureAlgorithm from signHash respons
 
 **Interfaces:**
 - `CSCSignatureStatusResponse`: `signatures: String[]`, `DocumentWithSignature: List<String>`, `SignatureObject: List<String>`, `responseID: String` (only spec fields, PascalCase JSON names for doc fields).
-- `CSCSignPollingPendingResponse`: `responseID: String`.
+- `CSCSignPollingPendingResponse`: `error: String` (constant `"accepted_request"`), `error_description: String`.
 - `SigningInProgressException`: carries `requestID: String`, thrown by `getSignatureStatus()` when operation is CREATED or PROCESSING.
 - `CSCSignatureController.getSignatureStatus()`: returns `ResponseEntity<?>`, 200 on COMPLETED, 202 on in-progress.
 
@@ -676,10 +685,13 @@ public class CSCSignatureStatusResponse {
 
 Create `src/main/java/com/wpanther/eidasremotesigning/dto/csc/CSCSignPollingPendingResponse.java`:
 
+The 202 in-progress body is error-shaped per spec §11.12 and the approved design spec: `{"error":"accepted_request","error_description":"..."}`. NOT a `responseID` field.
+
 ```java
 package com.wpanther.eidasremotesigning.dto.csc;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -691,7 +703,10 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class CSCSignPollingPendingResponse {
-    private String responseID;
+    private String error;
+
+    @JsonProperty("error_description")
+    private String errorDescription;
 }
 ```
 
@@ -772,6 +787,19 @@ public CSCSignatureStatusResponse getSignatureStatus(CSCSignatureStatusRequest r
 
 Also add import: `import com.wpanther.eidasremotesigning.exception.SigningInProgressException;`
 
+> **Note:** `SigningInProgressException` is caught in the controller via explicit try/catch (Steps 7 and Task 6 Step 3). To prevent a 500 if it ever escapes a controller (future code paths), also add a handler to `GlobalExceptionHandler.java`:
+> ```java
+> @ExceptionHandler(SigningInProgressException.class)
+> public ResponseEntity<CSCErrorResponse> handleSigningInProgress(SigningInProgressException e) {
+>     return ResponseEntity.accepted()
+>             .body(CSCErrorResponse.builder()
+>                     .error("accepted_request")
+>                     .error_description(e.getMessage())
+>                     .build());
+> }
+> ```
+> Add this handler at the bottom of `GlobalExceptionHandler` as part of Step 6, before the commit.
+
 - [ ] **Step 7: Fix CSCSignatureController.getSignatureStatus()**
 
 In `CSCSignatureController.java`, change the `getSignatureStatus()` method return type to `ResponseEntity<?>` and handle the 202:
@@ -789,7 +817,8 @@ public ResponseEntity<?> getSignatureStatus(
     } catch (com.wpanther.eidasremotesigning.exception.SigningInProgressException e) {
         return ResponseEntity.accepted().body(
                 CSCSignPollingPendingResponse.builder()
-                        .responseID(e.getRequestID())
+                        .error("accepted_request")
+                        .errorDescription("The previous async request has been accepted but not yet completed")
                         .build());
     }
 }
@@ -813,10 +842,11 @@ cd /home/wpanther/projects/etax/eidasremotesigning
 git add src/main/java/com/wpanther/eidasremotesigning/dto/csc/CSCSignatureStatusResponse.java \
         src/main/java/com/wpanther/eidasremotesigning/dto/csc/CSCSignPollingPendingResponse.java \
         src/main/java/com/wpanther/eidasremotesigning/exception/SigningInProgressException.java \
+        src/main/java/com/wpanther/eidasremotesigning/exception/GlobalExceptionHandler.java \
         src/main/java/com/wpanther/eidasremotesigning/service/CSCSignatureService.java \
         src/main/java/com/wpanther/eidasremotesigning/controller/CSCSignatureController.java \
         src/test/java/com/wpanther/eidasremotesigning/dto/CSCSignatureDtoTest.java
-git commit -m "fix(W6,F8,F9): signPolling PascalCase fields, remove non-spec fields, return 202 for in-progress"
+git commit -m "fix(W6,F8,F9): signPolling 202 error body, PascalCase fields, remove non-spec fields"
 ```
 
 ---
@@ -921,7 +951,8 @@ class AtLeastOneOfValidatorTest {
         Set<ConstraintViolation<CSCSignDocumentRequest>> violations = validator.validate(request);
         assertThat(violations).isNotEmpty();
         assertThat(violations.iterator().next().getMessage())
-                .contains("documentDigests");
+                .contains("documentDigests")
+                .contains("documents");
     }
 
     @Test
@@ -969,7 +1000,7 @@ import java.lang.annotation.Target;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface AtLeastOneOf {
-    String message() default "At least one of the fields {fields} must be provided";
+    String message() default "At least one of the specified fields must be provided";
     Class<?>[] groups() default {};
     Class<? extends Payload>[] payload() default {};
     String[] fields();
@@ -997,8 +1028,10 @@ public class AtLeastOneOfValidator implements ConstraintValidator<AtLeastOneOf, 
     @Override
     public void initialize(AtLeastOneOf constraintAnnotation) {
         this.fields = constraintAnnotation.fields();
-        this.message = constraintAnnotation.message()
-                .replace("{fields}", String.join(", ", fields));
+        // Build the message directly using String.format; do NOT rely on BV interpolation
+        // of {fields} since that only works for standard constraint attributes.
+        this.message = String.format("At least one of (%s) must be provided",
+                String.join(", ", fields));
     }
 
     @Override
@@ -1714,8 +1747,15 @@ if ("chain".equals(certificates)) {
 }
 ```
 
-For `associateCertificate()` which also calls `mapToCscCertificateInfo()`, update it to pass `"single"` as the certificates arg:
+**All call sites of `mapToCscCertificateInfo()` must be updated.** Search the full file for every invocation — there are at least 3:
+1. `getCredentialInfo()` — pass `request.getCertificates()`
+2. `associateCertificate()` — pass `"single"` (there may be multiple branches: BCFKS, AWSKMS, PKCS#11 — update each one)
+3. `listCredentials()` helper (Task 11) — pass `certParam`
+
+Run `grep -n "mapToCscCertificateInfo" src/main/java/com/wpanther/eidasremotesigning/service/CSCApiService.java` to confirm all call sites before committing.
+
 ```java
+// associateCertificate example update:
 return mapToCscCertificateInfo(cert, x509Cert, "single");
 ```
 
@@ -2099,8 +2139,20 @@ public CSCCredentialsListResponse listCredentials(CSCCredentialsListRequest requ
         List<SigningCertificate> certificates = certificateRepository.findByClientId(clientId);
 
         if (Boolean.TRUE.equals(request.getOnlyValid())) {
+            // Filter by DB active flag first (fast), then by X.509 notAfter for BCFKS/AWSKMS.
+            // PKCS#11 certs cannot be loaded without a PIN, so they pass through the isActive() check only.
+            java.time.Instant now = java.time.Instant.now();
             certificates = certificates.stream()
                     .filter(SigningCertificate::isActive)
+                    .filter(cert -> {
+                        if ("PKCS11".equals(cert.getStorageType())) return true;
+                        try {
+                            java.security.cert.X509Certificate x509 = loadX509(cert);
+                            return x509 != null && x509.getNotAfter().toInstant().isAfter(now);
+                        } catch (Exception e) {
+                            return false;
+                        }
+                    })
                     .collect(java.util.stream.Collectors.toList());
         }
 
@@ -2148,6 +2200,7 @@ private java.security.cert.X509Certificate loadX509(SigningCertificate cert) {
             return (java.security.cert.X509Certificate)
                     cf.generateCertificate(new java.io.ByteArrayInputStream(certBytes));
         } else {
+            // Verified: SigningCertificateService.loadCertificateFromBCFKS(SigningCertificate) exists at line ~423.
             return certificateService.loadCertificateFromBCFKS(cert);
         }
     } catch (Exception e) {
@@ -2159,7 +2212,75 @@ private java.security.cert.X509Certificate loadX509(SigningCertificate cert) {
 
 Note: PKCS#11 credentials cannot be loaded without a PIN, so they are skipped in the credential info list (returned in IDs only). This is acceptable for the W10 fix.
 
-- [ ] **Step 7: Run tests**
+- [ ] **Step 7: Add unit tests for W10 and W2 in CSCApiServiceTest**
+
+Create `src/test/java/com/wpanther/eidasremotesigning/service/CSCApiServiceTest.java` with these tests (mock `certificateRepository`, `certificateService`, `SigningCertificate`, and a self-signed `X509Certificate`):
+
+```java
+package com.wpanther.eidasremotesigning.service;
+
+import com.wpanther.eidasremotesigning.dto.csc.CSCCredentialsListRequest;
+import com.wpanther.eidasremotesigning.dto.csc.CSCCredentialsListResponse;
+import com.wpanther.eidasremotesigning.entity.SigningCertificate;
+import com.wpanther.eidasremotesigning.repository.SigningCertificateRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class CSCApiServiceTest {
+
+    @Mock
+    private SigningCertificateRepository certificateRepository;
+
+    // Other @Mock fields as needed by CSCApiService constructor
+
+    @BeforeEach
+    void setUpSecurityContext() {
+        Authentication auth = mock(Authentication.class);
+        when(auth.getName()).thenReturn("client-1");
+        SecurityContext ctx = mock(SecurityContext.class);
+        when(ctx.getAuthentication()).thenReturn(auth);
+        SecurityContextHolder.setContext(ctx);
+    }
+
+    @Test
+    void listCredentials_withoutCredentialInfo_returnsOnlyIds() {
+        SigningCertificate cert = new SigningCertificate();
+        cert.setId("cred-1");
+        cert.setActive(true);
+        cert.setStorageType("BCFKS");
+
+        when(certificateRepository.findByClientId("client-1")).thenReturn(List.of(cert));
+
+        // Wire up service with mocks (use constructor injection or reflection as needed)
+        // ...
+
+        CSCCredentialsListRequest request = CSCCredentialsListRequest.builder().build();
+        // CSCCredentialsListResponse response = service.listCredentials(request);
+        // assertThat(response.getCredentialIDs()).containsExactly("cred-1");
+        // assertThat(response.getCredentialInfos()).isNull();
+    }
+}
+```
+
+> **Implementation note:** `CSCApiService` has many dependencies. Wire them up using the same constructor-injection pattern as other service tests, or use `@SpringBootTest @ActiveProfiles("test")` integration tests for the list/info path. The key assertions to cover:
+> - `credentialInfo=true` → `credentialInfos` non-null
+> - `onlyValid=true` → expired certs excluded
+> - `certificates="none"` → `cert.certificates` null in response
+> - `cert.status` = `"valid"` for non-expired, `"expired"` for expired
+
+- [ ] **Step 8: Run tests**
 
 ```bash
 cd /home/wpanther/projects/etax/eidasremotesigning
@@ -2168,7 +2289,7 @@ mvn test
 
 Expected: All pass.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 cd /home/wpanther/projects/etax/eidasremotesigning
@@ -2176,7 +2297,8 @@ git add src/main/java/com/wpanther/eidasremotesigning/dto/csc/CSCCredentialsList
         src/main/java/com/wpanther/eidasremotesigning/dto/csc/CSCCredentialsListResponse.java \
         src/main/java/com/wpanther/eidasremotesigning/dto/csc/CSCCertificateInfo.java \
         src/main/java/com/wpanther/eidasremotesigning/service/CSCApiService.java \
-        src/main/java/com/wpanther/eidasremotesigning/util/CSCConstants.java
+        src/main/java/com/wpanther/eidasremotesigning/util/CSCConstants.java \
+        src/test/java/com/wpanther/eidasremotesigning/service/CSCApiServiceTest.java
 git commit -m "fix(W1,W2,W10,W11): curve field, cert/status, credentialInfo in list, spec-compliant list request"
 ```
 
@@ -2197,10 +2319,10 @@ git commit -m "fix(W1,W2,W10,W11): curve field, cert/status, credentialInfo in l
 
 **Interfaces:**
 - `CSCOAuth2TokenResponse`: new `credentialID: String` field (optional, NON_NULL).
-- `CSCOAuth2Service.revokeToken(token, tokenTypeHint)`: removes token from in-memory stores; throws `CSCOAuth2Exception("invalid_token", ...)` if not found.
+- `CSCOAuth2Service.revokeToken(token, tokenTypeHint)`: removes token from in-memory stores; **silently succeeds** for unknown tokens (RFC 7009 §2.2 prohibits errors for unrecognized tokens).
 - `CSCOAuth2Service.storeAuthorizationRequest(code, clientId, redirectUri, scope, state, codeChallenge, codeChallengeMethod, credentialID)`: extended signature.
 - `CSCOAuth2Service.exchangeAuthorizationCode(code, redirectUri, clientId, clientSecret, codeVerifier)`: validates PKCE code_verifier against stored code_challenge.
-- `POST /csc/v2/oauth2/revoke`: accepts `token` and optional `token_type_hint`; returns 200.
+- `POST /csc/v2/oauth2/revoke`: accepts `token` and optional `token_type_hint`; returns **204 No Content** (RFC 7009 §2.2, CSC spec §8.4.5).
 
 - [ ] **Step 1: Write failing test for revoke**
 
@@ -2389,6 +2511,8 @@ private static class AuthorizationRequest {
 ```
 
 **B. Update `storeAuthorizationRequest()` signature** (add PKCE + credentialID params):
+
+> **Note:** The existing `new Thread(() -> Thread.sleep(600000))` pattern for auth-code expiry is retained as-is (out of scope). It's a known issue — each auth code starts a sleeping thread. A future cleanup should replace it with `ScheduledExecutorService.schedule()` or a TTL-aware `ConcurrentHashMap` wrapper.
 
 ```java
 public void storeAuthorizationRequest(String code, String clientId, String redirectUri,
@@ -2601,6 +2725,8 @@ public ResponseEntity<CSCOAuth2TokenResponse> token(
 
 **C. Add `revoke()` endpoint** (F13):
 
+RFC 7009 §2.2 and CSC spec §8.4.5 require HTTP 204 No Content. Unknown tokens must NOT produce an error.
+
 ```java
 @PostMapping("/revoke")
 public ResponseEntity<Void> revoke(
@@ -2608,7 +2734,7 @@ public ResponseEntity<Void> revoke(
         @RequestParam(required = false) String token_type_hint) {
     log.debug("CSC OAuth2 revoke request");
     oAuth2Service.revokeToken(token, token_type_hint);
-    return ResponseEntity.ok().build();
+    return ResponseEntity.noContent().build();
 }
 ```
 
