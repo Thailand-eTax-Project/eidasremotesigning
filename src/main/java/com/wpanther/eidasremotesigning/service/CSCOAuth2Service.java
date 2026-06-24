@@ -17,6 +17,9 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Service implementing OAuth2 functionality for CSC API
@@ -34,6 +37,14 @@ public class CSCOAuth2Service {
     private final Map<String, AuthorizationRequest> authorizationRequests = new ConcurrentHashMap<>();
     private final Map<String, TokenInfo> accessTokens = new ConcurrentHashMap<>();
     private final Map<String, String> refreshTokens = new ConcurrentHashMap<>(); // refreshToken -> accessToken
+
+    // Single-thread scheduler for auth-code TTL expiry; daemon so it doesn't block JVM shutdown.
+    private static final ScheduledExecutorService AUTH_CODE_EXPIRY_SCHEDULER =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "auth-code-expiry");
+                t.setDaemon(true);
+                return t;
+            });
     
     // Token expiration time in seconds (1 hour)
     private static final int ACCESS_TOKEN_EXPIRATION = 3600;
@@ -56,18 +67,9 @@ public class CSCOAuth2Service {
                 codeChallenge, codeChallengeMethod, credentialID,
                 Instant.now()));
 
-        // Set expiration (auth codes expire in 10 minutes)
-        // NOTE: existing thread-per-auth-code pattern is retained (out of scope, future cleanup).
-        // A future cleanup should replace it with ScheduledExecutorService.schedule() or a
-        // TTL-aware ConcurrentHashMap wrapper.
-        new Thread(() -> {
-            try {
-                Thread.sleep(600000); // 10 minutes
-                authorizationRequests.remove(code);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }).start();
+        // Schedule auth-code expiry after 10 minutes. The single-daemon-thread scheduler
+        // avoids the one-thread-per-code leak of the prior Thread.sleep() approach.
+        AUTH_CODE_EXPIRY_SCHEDULER.schedule(() -> authorizationRequests.remove(code), 10, TimeUnit.MINUTES);
     }
 
     /**

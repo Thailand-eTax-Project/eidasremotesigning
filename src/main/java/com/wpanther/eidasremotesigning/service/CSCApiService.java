@@ -128,6 +128,10 @@ public class CSCApiService {
                         X509Certificate x509 = loadX509(cert);
                         if (x509 != null) {
                             infos.add(mapToCscCertificateInfo(cert, x509, certParam));
+                        } else {
+                            // PKCS#11 certs return null from loadX509() (no PIN available at list time).
+                            // credentialInfos will be shorter than credentialIDs for such entries.
+                            log.debug("Credential {} omitted from credentialInfos (PKCS#11 or unloadable X.509)", cert.getId());
                         }
                     } catch (Exception e) {
                         log.warn("Skipping credential {} in list: {}", cert.getId(), e.getMessage());

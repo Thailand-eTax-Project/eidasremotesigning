@@ -2,11 +2,15 @@ package com.wpanther.eidasremotesigning.validation;
 
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Field;
 import java.util.Collection;
 
 public class AtLeastOneOfValidator implements ConstraintValidator<AtLeastOneOf, Object> {
+
+    private static final Logger log = LoggerFactory.getLogger(AtLeastOneOfValidator.class);
 
     private String[] fields;
     private String message;
@@ -37,7 +41,10 @@ public class AtLeastOneOfValidator implements ConstraintValidator<AtLeastOneOf, 
                         return true;
                     }
                 }
-            } catch (NoSuchFieldException | IllegalAccessException ignored) {
+            } catch (NoSuchFieldException e) {
+                log.warn("@AtLeastOneOf: field '{}' not found on {}; check annotation configuration",
+                        fieldName, value.getClass().getSimpleName());
+            } catch (IllegalAccessException ignored) {
             }
         }
         context.disableDefaultConstraintViolation();
