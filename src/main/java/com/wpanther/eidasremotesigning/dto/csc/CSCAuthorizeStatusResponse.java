@@ -6,19 +6,12 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * CSC API authorize status response
- * Based on CSC API v2.0 specifications
- */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class CSCAuthorizeStatusResponse {
-    private String credentialID;
-    private String status;
     private String SAD;
     private Long expiresIn;
-    private String authMode;
 }

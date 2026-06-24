@@ -5,6 +5,7 @@ import com.wpanther.eidasremotesigning.entity.SigningCertificate;
 import com.wpanther.eidasremotesigning.entity.TransactionAuthorization;
 import com.wpanther.eidasremotesigning.exception.CertificateException;
 import com.wpanther.eidasremotesigning.exception.SigningException;
+import com.wpanther.eidasremotesigning.exception.SigningInProgressException;
 import com.wpanther.eidasremotesigning.repository.SigningCertificateRepository;
 import com.wpanther.eidasremotesigning.repository.TransactionAuthorizationRepository;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -165,43 +166,27 @@ public class CSCAuthorizationService {
         try {
             String handle = request.getHandle();
 
-            // Find transaction by handle (no clientId needed - handle uniquely identifies the transaction)
             TransactionAuthorization transaction = transactionRepository.findById(handle)
                     .orElseThrow(() -> new SigningException("Transaction not found"));
 
-            // Check expiration
-            boolean isExpired = transaction.getExpiresAt().isBefore(Instant.now());
-            
-            // Determine status
-            String status;
-            if (isExpired) {
-                status = "EXPIRED";
-            } else {
-                status = transaction.getStatus();
+            if (transaction.getExpiresAt().isBefore(Instant.now())) {
+                throw new SigningException("Transaction has expired");
             }
-            
-            // Find associated certificate
-            SigningCertificate certificate = certificateRepository.findById(transaction.getCertificateId())
-                    .orElseThrow(() -> new CertificateException("Certificate not found"));
-            
-            // Calculate expires in time in seconds
-            long expiresIn = 0;
-            if (!isExpired) {
-                expiresIn = transaction.getExpiresAt().getEpochSecond() - Instant.now().getEpochSecond();
-                if (expiresIn < 0) expiresIn = 0;
+
+            if ("AUTHORIZATION_INITIALIZED".equals(transaction.getStatus())) {
+                throw new SigningInProgressException(handle);
             }
-            
-            // Determine auth mode
-            String authMode = "PKCS11".equals(certificate.getStorageType()) ? "explicit" : "implicit";
-            
+
+            long expiresIn = transaction.getExpiresAt().getEpochSecond() - Instant.now().getEpochSecond();
+            if (expiresIn < 0) expiresIn = 0;
+
             return CSCAuthorizeStatusResponse.builder()
-                    .credentialID(transaction.getCertificateId())
-                    .status(status)
-                    .SAD(isExpired ? null : transaction.getSad())
-                    .expiresIn(isExpired ? 0 : expiresIn)
-                    .authMode(authMode)
+                    .SAD(transaction.getSad())
+                    .expiresIn(expiresIn)
                     .build();
-            
+
+        } catch (SigningInProgressException | SigningException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Failed to get authorization status", e);
             throw new SigningException("Failed to get authorization status: " + e.getMessage(), e);

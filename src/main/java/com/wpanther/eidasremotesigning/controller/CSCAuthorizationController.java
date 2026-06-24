@@ -51,11 +51,15 @@ public class CSCAuthorizationController {
      * Returns the current status of a credential authorization process
      */
     @PostMapping("/authorizeCheck")
-    public ResponseEntity<CSCAuthorizeStatusResponse> getAuthorizeStatus(
+    public ResponseEntity<?> getAuthorizeStatus(
             @Valid @RequestBody CSCAuthorizeStatusRequest request) {
         log.debug("CSC API: Authorization status request");
-        
-        CSCAuthorizeStatusResponse response = cscAuthorizationService.getAuthorizeStatus(request);
-        return ResponseEntity.ok(response);
+
+        try {
+            CSCAuthorizeStatusResponse response = cscAuthorizationService.getAuthorizeStatus(request);
+            return ResponseEntity.ok(response);
+        } catch (com.wpanther.eidasremotesigning.exception.SigningInProgressException e) {
+            return ResponseEntity.accepted().build();
+        }
     }
 }
