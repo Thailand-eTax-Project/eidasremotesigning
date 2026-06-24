@@ -139,7 +139,7 @@ public class CSCApiService {
                 x509Cert = certificateService.loadCertificateFromBCFKS(cert);
             }
 
-            return mapToCscCertificateInfo(cert, x509Cert);
+            return mapToCscCertificateInfo(cert, x509Cert, request.getCertificates());
         } catch (CertificateException ce) {
             throw ce;
         } catch (Exception e) {
@@ -357,8 +357,13 @@ public class CSCApiService {
         }
     }
 
-    private CSCCertificateInfo mapToCscCertificateInfo(SigningCertificate cert, X509Certificate x509Cert)
+    private CSCCertificateInfo mapToCscCertificateInfo(SigningCertificate cert, X509Certificate x509Cert,
+                                                    String certificates)
             throws Exception {
+        // Spec §11.4: "chain" is reserved but full chain assembly is not yet implemented.
+        if ("chain".equals(certificates)) {
+            log.warn("certificates=chain is not yet supported; falling back to single");
+        }
         String subjectDN = x509Cert.getSubjectX500Principal().getName();
         String issuerDN = x509Cert.getIssuerX500Principal().getName();
         String serialNumber = x509Cert.getSerialNumber().toString();
@@ -395,7 +400,7 @@ public class CSCApiService {
                 .keyUsage(keyUsage)
                 .validFrom(validFrom)
                 .validTo(validTo)
-                .certificates(new String[]{certBase64})
+                .certificates("none".equals(certificates) ? null : new String[]{certBase64})
                 .build();
 
         CSCCertificateInfo.CSCKeyInfo keyInfo = CSCCertificateInfo.CSCKeyInfo.builder()
@@ -500,7 +505,7 @@ public class CSCApiService {
             certificateRepository.save(certEntity);
             
             // Map to CSC certificate info format
-            return mapToCscCertificateInfo(certEntity, certificate);
+            return mapToCscCertificateInfo(certEntity, certificate, "single");
         } catch (Exception e) {
             log.error("Error associating certificate", e);
             throw new CertificateException("Failed to associate PKCS#11 certificate: " + e.getMessage(), e);

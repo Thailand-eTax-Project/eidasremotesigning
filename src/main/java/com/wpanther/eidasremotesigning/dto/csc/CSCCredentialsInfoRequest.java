@@ -21,4 +21,5 @@ public class CSCCredentialsInfoRequest {
 
     private Boolean certInfo;
     private Boolean authInfo;
+    private String certificates;
 }

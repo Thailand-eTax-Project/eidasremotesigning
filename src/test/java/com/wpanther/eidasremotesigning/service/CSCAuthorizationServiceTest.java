@@ -83,4 +83,35 @@ class CSCAuthorizationServiceTest {
                 .as("handle must be null for synchronous PIN auth (spec §11.6)")
                 .isNull();
     }
+
+    @Test
+    void extendTransaction_generatesNewSadAndReturnsIt() {
+        TransactionAuthorization existing = TransactionAuthorization.builder()
+                .id("txn-1")
+                .clientId("test-client")
+                .sad("old-sad-value")
+                .status("AUTHORIZED")
+                .expiresAt(java.time.Instant.now().plusSeconds(300))
+                .build();
+
+        when(transactionRepository.findBySadAndClientId(eq("old-sad-value"), eq("test-client")))
+                .thenReturn(Optional.of(existing));
+        when(transactionRepository.save(any(TransactionAuthorization.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        com.wpanther.eidasremotesigning.dto.csc.CSCExtendTransactionRequest request =
+                com.wpanther.eidasremotesigning.dto.csc.CSCExtendTransactionRequest.builder()
+                        .credentialID("cred-1")
+                        .SAD("old-sad-value")
+                        .build();
+
+        com.wpanther.eidasremotesigning.dto.csc.CSCExtendTransactionResponse response =
+                service.extendTransaction(request);
+
+        assertThat(response.getSAD())
+                .as("spec §11.8: new SAD must be returned after extendTransaction")
+                .isNotNull()
+                .isNotEqualTo("old-sad-value");
+        assertThat(response.getExpiresIn()).isGreaterThan(0);
+    }
 }

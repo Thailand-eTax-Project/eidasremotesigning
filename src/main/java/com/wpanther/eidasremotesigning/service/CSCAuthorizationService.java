@@ -127,32 +127,35 @@ public class CSCAuthorizationService {
             TransactionAuthorization transaction = transactionRepository
                     .findBySadAndClientId(request.getSAD(), clientId)
                     .orElseThrow(() -> new SigningException("Transaction not found for provided SAD"));
-            
+
             // Check if transaction has expired
             if (transaction.getExpiresAt().isBefore(Instant.now())) {
                 throw new SigningException("Transaction has expired");
             }
-            
+
             // Check if transaction is in a valid state
-            if (!"AUTHORIZATION_INITIALIZED".equals(transaction.getStatus()) && 
+            if (!"AUTHORIZATION_INITIALIZED".equals(transaction.getStatus()) &&
                 !"AUTHORIZED".equals(transaction.getStatus())) {
                 throw new SigningException("Transaction cannot be extended in current state: " + transaction.getStatus());
             }
-            
-            // Extend the transaction by the default validity period
+
+            // Spec §11.8: generate a fresh SAD, invalidate the old one, save, and return the new SAD.
+            String newSad = generateSignatureActivationData();
             Instant newExpiresAt = Instant.now().plusSeconds(DEFAULT_VALIDITY_PERIOD);
+
+            transaction.setSad(newSad);
             transaction.setExpiresAt(newExpiresAt);
-            
+
             transactionRepository.save(transaction);
-            log.debug("Extended transaction authorization: {}", transaction.getId());
-            
-            // Calculate expires in time in seconds
-            long expiresIn = DEFAULT_VALIDITY_PERIOD;
-            
+            log.debug("Extended transaction authorization with new SAD: {}", transaction.getId());
+
             return CSCExtendTransactionResponse.builder()
-                    .expiresIn(expiresIn)
+                    .SAD(newSad)
+                    .expiresIn(DEFAULT_VALIDITY_PERIOD)
                     .build();
-            
+
+        } catch (SigningException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Failed to extend transaction", e);
             throw new SigningException("Failed to extend transaction: " + e.getMessage(), e);
