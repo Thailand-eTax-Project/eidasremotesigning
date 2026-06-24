@@ -177,6 +177,10 @@ public class CSCSignatureService {
      */
     private CSCSignDocumentResponse executeSignDocument(CSCSignDocumentRequest request) {
         try{
+            if (Boolean.TRUE.equals(request.getReturnValidationInfo())) {
+                log.warn("returnValidationInfo=true is not supported; validationInfo will not be included in response");
+            }
+
             String clientId = currentClientId();
             String credentialId = request.getCredentialID();
 
@@ -347,7 +351,6 @@ public class CSCSignatureService {
                 // Return response for full document signing (signature embedded by EU DSS)
                 return CSCSignDocumentResponse.builder()
                         .documentWithSignature(signedDocuments)
-                        .responseID(UUID.randomUUID().toString())
                         .build();
 
             } else {
@@ -358,7 +361,6 @@ public class CSCSignatureService {
             return CSCSignDocumentResponse.builder()
                     .documentWithSignature(signedDocuments.isEmpty() ? null : signedDocuments)
                     .signatureObject(signatureObjects.isEmpty() ? null : signatureObjects)
-                    .responseID(UUID.randomUUID().toString())
                     .build();
 
         } catch (SigningException se) {
