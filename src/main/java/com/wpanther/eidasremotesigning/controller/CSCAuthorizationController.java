@@ -62,7 +62,11 @@ public class CSCAuthorizationController {
             CSCAuthorizeStatusResponse response = cscAuthorizationService.getAuthorizeStatus(request);
             return ResponseEntity.ok(response);
         } catch (com.wpanther.eidasremotesigning.exception.SigningInProgressException e) {
-            return ResponseEntity.accepted().build();
+            return ResponseEntity.accepted().body(
+                    com.wpanther.eidasremotesigning.dto.csc.CSCAuthorizePendingResponse.builder()
+                            .error("accepted_request")
+                            .errorDescription("The credential authorization is still pending")
+                            .build());
         }
     }
 }

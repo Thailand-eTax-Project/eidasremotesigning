@@ -22,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.core.context.SecurityContextHolder;
 import java.security.PrivateKey;
 import java.security.Signature;
+import java.security.cert.CertificateExpiredException;
+import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -403,7 +405,20 @@ public class CSCApiService {
         String validFrom = formatter.format(x509Cert.getNotBefore().toInstant());
         String validTo = formatter.format(x509Cert.getNotAfter().toInstant());
 
-        boolean certExpired = x509Cert.getNotAfter().toInstant().isBefore(Instant.now());
+        // Determine cert status using X509Certificate.checkValidity() semantics:
+        //   - "valid" if notBefore <= now < notAfter
+        //   - "expired" if notAfter is in the past
+        //   - null (omitted) if notBefore is in the future (not-yet-valid is not in
+        //     the CSC v2.0 status enum of valid/expired/revoked/suspended).
+        String certStatus;
+        try {
+            x509Cert.checkValidity();
+            certStatus = CSCConstants.CERT_STATUS_VALID;
+        } catch (CertificateExpiredException e) {
+            certStatus = CSCConstants.CERT_STATUS_EXPIRED;
+        } catch (CertificateNotYetValidException e) {
+            certStatus = null;
+        }
 
         String certBase64 = Base64.getEncoder().encodeToString(x509Cert.getEncoded());
 
@@ -429,7 +444,7 @@ public class CSCApiService {
                 .subjectDN(subjectDN)
                 .issuerDN(issuerDN)
                 .serialNumber(serialNumber)
-                .status(certExpired ? CSCConstants.CERT_STATUS_EXPIRED : CSCConstants.CERT_STATUS_VALID)
+                .status(certStatus)
                 .keyUsage(keyUsage)
                 .validFrom(validFrom)
                 .validTo(validTo)
