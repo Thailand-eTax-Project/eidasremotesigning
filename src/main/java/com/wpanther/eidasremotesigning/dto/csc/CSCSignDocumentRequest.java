@@ -1,6 +1,7 @@
 package com.wpanther.eidasremotesigning.dto.csc;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.wpanther.eidasremotesigning.validation.AtLeastOneOf;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
@@ -22,6 +23,7 @@ public class CSCSignDocumentRequest {
 
     private String signatureQualifier;
 
+    @JsonProperty("SAD")
     private String SAD;
 
     private List<DocumentDigestEntry> documentDigests;

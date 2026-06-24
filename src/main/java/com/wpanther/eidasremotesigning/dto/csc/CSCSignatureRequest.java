@@ -1,6 +1,7 @@
 package com.wpanther.eidasremotesigning.dto.csc;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -16,6 +17,7 @@ public class CSCSignatureRequest {
 
     private CSCBaseRequest.Credentials credentials;
 
+    @JsonProperty("SAD")
     private String SAD;
 
     @NotBlank(message = "credentialID is required")

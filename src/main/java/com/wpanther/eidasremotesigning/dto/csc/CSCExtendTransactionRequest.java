@@ -1,6 +1,7 @@
 package com.wpanther.eidasremotesigning.dto.csc;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -20,6 +21,7 @@ public class CSCExtendTransactionRequest {
     private String credentialID;
 
     @NotBlank(message = "SAD is required")
+    @JsonProperty("SAD")
     private String SAD;
 
     private List<String> hashes;
