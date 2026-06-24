@@ -99,9 +99,10 @@ public class CSCAuthorizationService {
             transactionRepository.save(transaction);
             log.debug("Created transaction authorization: {}", transactionId);
 
-            // Build and return response
+            // Build and return response — spec §11.6: sync (200) response contains only SAD + expiresIn.
+            // The transactionId is generated and persisted above so the DB record is reachable via SAD,
+            // but it must NOT be returned to the client in the synchronous response.
             return CSCAuthorizeResponse.builder()
-                    .handle(transactionId)
                     .SAD(sad)
                     .expiresIn(validityPeriod)
                     .build();

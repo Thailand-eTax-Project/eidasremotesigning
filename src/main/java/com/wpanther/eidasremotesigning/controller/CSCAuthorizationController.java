@@ -25,12 +25,15 @@ public class CSCAuthorizationController {
      * This endpoint initiates the credential authorization process
      */
     @PostMapping("/authorize")
-    public ResponseEntity<CSCAuthorizeResponse> authorizeCredential(
+    public ResponseEntity<?> authorizeCredential(
             @Valid @RequestBody CSCAuthorizeRequest request) {
         log.debug("CSC API: Credential authorization request");
-        
+
         CSCAuthorizeResponse response = cscAuthorizationService.authorizeCredential(request);
-        return ResponseEntity.ok(response);
+        if (response.getSAD() != null) {
+            return ResponseEntity.ok(response);
+        }
+        return ResponseEntity.accepted().body(response);
     }
     
     /**
