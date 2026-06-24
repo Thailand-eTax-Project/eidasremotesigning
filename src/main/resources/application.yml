@@ -23,6 +23,7 @@ logging:
 app:
   csc:
     base-url: ${CSC_BASE_URL:http://localhost:9000}
+    logo-url: ${CSC_LOGO_URL:http://localhost:9000/logo.png}
   keystore:
     # Base directory for storing keystores
     base-path: ${KEYSTORE_PATH:/app/keystores}

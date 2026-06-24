@@ -29,6 +29,7 @@ logging:
 app:
   csc:
     base-url: http://localhost:9000
+    logo-url: http://localhost:9000/logo.png
   keystore:
     base-path: ${java.io.tmpdir}/test-keystores
   pkcs11:

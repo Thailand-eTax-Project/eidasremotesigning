@@ -31,6 +31,9 @@ public class CSCApiController {
     @Value("${app.csc.base-url}")
     private String cscBaseUrl;
 
+    @Value("${app.csc.logo-url:}")
+    private String cscLogoUrl;
+
     /**
      * Get information about this CSC service
      */
@@ -43,6 +46,7 @@ public class CSCApiController {
         CSCInfoResponse response = CSCInfoResponse.builder()
                 .specs(CSCConstants.SPECS_VERSION)
                 .name("eIDAS Remote Signing Service")
+                .logo(cscLogoUrl.isEmpty() ? null : cscLogoUrl)
                 .region("EU")
                 .lang("en")
                 .description("eIDAS compliant remote signing service supporting PKCS#11 hardware tokens, AWS KMS, and BCFKS keystores")
@@ -64,13 +68,16 @@ public class CSCApiController {
                         .build())
                 .signature_formats(CSCInfoResponse.SignatureFormats.builder()
                         .formats(List.of("P", "X"))
+                        // Per CSC spec §11.1: one inner array per format entry.
+                        // "P" (PAdES) supports "Certification" and "Revision" envelope properties.
+                        // "X" (XAdES) supports "Enveloped", "Enveloping", "Detached".
+                        .envelope_properties(List.of(
+                                List.of("Certification", "Revision"),
+                                List.of("Enveloped", "Enveloping", "Detached")
+                        ))
                         .build())
                 .conformance_levels(List.of("Ades-B-B"))
-                .oauth2(CSCInfoResponse.OAuth2Info.builder()
-                        .authorization_endpoint(cscBaseUrl + "/oauth2/authorize")
-                        .token_endpoint(cscBaseUrl + "/oauth2/token")
-                        .revoke_endpoint(cscBaseUrl + "/oauth2/revoke")
-                        .build())
+                .oauth2(cscBaseUrl)
                 .asynchronousOperationMode(true)
                 .build();
 
