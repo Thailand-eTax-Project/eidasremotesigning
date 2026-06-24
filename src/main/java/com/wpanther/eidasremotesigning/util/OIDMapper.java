@@ -31,6 +31,7 @@ public final class OIDMapper {
         SIG_OID_TO_JCA.put("1.2.840.113549.1.1.11", "SHA256withRSA");
         SIG_OID_TO_JCA.put("1.2.840.113549.1.1.12", "SHA384withRSA");
         SIG_OID_TO_JCA.put("1.2.840.113549.1.1.13", "SHA512withRSA");
+        SIG_OID_TO_JCA.put("1.2.840.113549.1.1.10", "RSASSA-PSS");
         SIG_OID_TO_JCA.put("1.2.840.10045.4.3.2",   "SHA256withECDSA");
         SIG_OID_TO_JCA.put("1.2.840.10045.4.3.3",   "SHA384withECDSA");
         SIG_OID_TO_JCA.put("1.2.840.10045.4.3.4",   "SHA512withECDSA");
@@ -39,7 +40,8 @@ public final class OIDMapper {
         KEY_TO_SIG_OIDS.put("RSA", new String[]{
                 "1.2.840.113549.1.1.11",
                 "1.2.840.113549.1.1.12",
-                "1.2.840.113549.1.1.13"
+                "1.2.840.113549.1.1.13",
+                "1.2.840.113549.1.1.10"
         });
         KEY_TO_SIG_OIDS.put("EC", new String[]{
                 "1.2.840.10045.4.3.2",
@@ -119,6 +121,10 @@ public final class OIDMapper {
      * Used when we have a signAlgo OID but need to derive the hash algorithm.
      */
     public static String toJcaHashAlgoForSig(String sigOid) {
+        if ("1.2.840.113549.1.1.10".equals(sigOid)) {
+            throw new SigningException(
+                    "RSASSA-PSS hash algorithm is specified in signAlgoParams, not the OID: " + sigOid);
+        }
         String result = SIG_OID_TO_HASH_JCA.get(sigOid);
         if (result == null) throw new SigningException("Unsupported signature algorithm OID: " + sigOid);
         return result;

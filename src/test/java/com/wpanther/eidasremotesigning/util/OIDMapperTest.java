@@ -115,7 +115,8 @@ class OIDMapperTest {
         assertThat(oids).containsExactly(
                 "1.2.840.113549.1.1.11",
                 "1.2.840.113549.1.1.12",
-                "1.2.840.113549.1.1.13"
+                "1.2.840.113549.1.1.13",
+                "1.2.840.113549.1.1.10"
         );
     }
 
@@ -146,5 +147,28 @@ class OIDMapperTest {
     void roundTrip_sigAlgo_sha384WithEcdsa() {
         String oid = OIDMapper.toOidSigAlgo("SHA384withECDSA");
         assertThat(OIDMapper.toJcaSigAlgo(oid)).isEqualTo("SHA384withECDSA");
+    }
+
+    @Test
+    void toJcaSigAlgo_rsassaPss_returnsRSASSAPSS() {
+        assertThat(OIDMapper.toJcaSigAlgo("1.2.840.113549.1.1.10")).isEqualTo("RSASSA-PSS");
+    }
+
+    @Test
+    void toOidSigAlgo_rsassaPss_returnsPssOid() {
+        assertThat(OIDMapper.toOidSigAlgo("RSASSA-PSS")).isEqualTo("1.2.840.113549.1.1.10");
+    }
+
+    @Test
+    void supportedSigOids_rsa_includesPssOid() {
+        String[] rsaOids = OIDMapper.supportedSigOidsForKeyAlgo("RSA");
+        assertThat(rsaOids).contains("1.2.840.113549.1.1.10");
+    }
+
+    @Test
+    void toJcaHashAlgoForSig_pssOid_throwsSigningException() {
+        assertThatThrownBy(() -> OIDMapper.toJcaHashAlgoForSig("1.2.840.113549.1.1.10"))
+                .isInstanceOf(SigningException.class)
+                .hasMessageContaining("hash algorithm is specified in signAlgoParams");
     }
 }
