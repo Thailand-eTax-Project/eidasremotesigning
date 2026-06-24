@@ -93,18 +93,48 @@ public class CSCApiService {
             String clientId = currentClientId();
             List<SigningCertificate> certificates = certificateRepository.findByClientId(clientId);
 
+            if (Boolean.TRUE.equals(request.getOnlyValid())) {
+                // Filter by DB active flag first (fast), then by X.509 notAfter for BCFKS/AWSKMS.
+                // PKCS#11 certs cannot be loaded without a PIN, so they pass through the isActive() check only.
+                java.time.Instant now = java.time.Instant.now();
+                certificates = certificates.stream()
+                        .filter(SigningCertificate::isActive)
+                        .filter(cert -> {
+                            if ("PKCS11".equals(cert.getStorageType())) return true;
+                            try {
+                                X509Certificate x509 = loadX509(cert);
+                                return x509 != null && x509.getNotAfter().toInstant().isAfter(now);
+                            } catch (Exception e) {
+                                return false;
+                            }
+                        })
+                        .collect(java.util.stream.Collectors.toList());
+            }
+
             List<String> credentialIds = certificates.stream()
                     .map(SigningCertificate::getId)
                     .collect(java.util.stream.Collectors.toList());
 
-            if (request.getMaxResults() != null && request.getMaxResults() > 0
-                    && credentialIds.size() > request.getMaxResults()) {
-                credentialIds = credentialIds.subList(0, request.getMaxResults());
+            CSCCredentialsListResponse.CSCCredentialsListResponseBuilder builder =
+                    CSCCredentialsListResponse.builder().credentialIDs(credentialIds);
+
+            if (Boolean.TRUE.equals(request.getCredentialInfo())) {
+                String certParam = request.getCertificates() != null ? request.getCertificates() : "single";
+                List<CSCCertificateInfo> infos = new java.util.ArrayList<>();
+                for (SigningCertificate cert : certificates) {
+                    try {
+                        X509Certificate x509 = loadX509(cert);
+                        if (x509 != null) {
+                            infos.add(mapToCscCertificateInfo(cert, x509, certParam));
+                        }
+                    } catch (Exception e) {
+                        log.warn("Skipping credential {} in list: {}", cert.getId(), e.getMessage());
+                    }
+                }
+                builder.credentialInfos(infos.isEmpty() ? null : infos);
             }
 
-            return CSCCredentialsListResponse.builder()
-                    .credentialIDs(credentialIds)
-                    .build();
+            return builder.build();
         } catch (Exception e) {
             log.error("Error in listCredentials", e);
             throw new CertificateException("Failed to list credentials: " + e.getMessage(), e);
@@ -373,6 +403,8 @@ public class CSCApiService {
         String validFrom = formatter.format(x509Cert.getNotBefore().toInstant());
         String validTo = formatter.format(x509Cert.getNotAfter().toInstant());
 
+        boolean certExpired = x509Cert.getNotAfter().toInstant().isBefore(Instant.now());
+
         String certBase64 = Base64.getEncoder().encodeToString(x509Cert.getEncoded());
 
         String keyAlgoJca = x509Cert.getPublicKey().getAlgorithm();
@@ -397,6 +429,7 @@ public class CSCApiService {
                 .subjectDN(subjectDN)
                 .issuerDN(issuerDN)
                 .serialNumber(serialNumber)
+                .status(certExpired ? CSCConstants.CERT_STATUS_EXPIRED : CSCConstants.CERT_STATUS_VALID)
                 .keyUsage(keyUsage)
                 .validFrom(validFrom)
                 .validTo(validTo)
@@ -450,15 +483,27 @@ public class CSCApiService {
     }
 
     /**
-     * Extracts PIN from CSC request
+     * Loads an X.509 certificate from the given credential entity without requiring a PIN.
+     * Supports AWSKMS (decodes certificateData) and BCFKS (via SigningCertificateService).
+     * PKCS#11 certs cannot be loaded without a PIN, so they are skipped (this is acceptable for list/info paths).
      */
-    private String extractPinFromRequest(CSCCredentialsListRequest request) {
-        if (request.getCredentials() != null &&
-                request.getCredentials().getPin() != null &&
-                request.getCredentials().getPin().getValue() != null) {
-            return request.getCredentials().getPin().getValue();
+    private X509Certificate loadX509(SigningCertificate cert) {
+        try {
+            if ("AWSKMS".equals(cert.getStorageType())) {
+                if (cert.getCertificateData() == null) {
+                    return null;
+                }
+                byte[] certBytes = Base64.getDecoder().decode(cert.getCertificateData());
+                java.security.cert.CertificateFactory cf =
+                        java.security.cert.CertificateFactory.getInstance("X.509");
+                return (X509Certificate) cf.generateCertificate(new java.io.ByteArrayInputStream(certBytes));
+            } else {
+                return certificateService.loadCertificateFromBCFKS(cert);
+            }
+        } catch (Exception e) {
+            log.debug("Could not load X.509 for credential {}: {}", cert.getId(), e.getMessage());
+            return null;
         }
-        return null;
     }
 
         /**

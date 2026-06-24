@@ -37,6 +37,7 @@ public class CSCCertificateInfo {
         private String subjectDN;
         private String issuerDN;
         private String serialNumber;
+        private String status;
         private String[] policies;
         private String[] keyUsage;
         private String validFrom;
@@ -53,7 +54,7 @@ public class CSCCertificateInfo {
         private String status;
         private String[] algo;
         private Integer len;
-        private String[] curveIds;
+        private String curve;
     }
 
     @Data

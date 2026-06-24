@@ -6,18 +6,17 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import jakarta.validation.constraints.NotBlank;
-
-/**
- * CSC API credentials list request
- * Based on CSC API v2.0 specifications
- */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class CSCCredentialsListRequest {
-    private CSCBaseRequest.Credentials credentials;
-    private Integer maxResults;
+    private Boolean credentialInfo;
+    private String certificates;
+    private Boolean certInfo;
+    private Boolean authInfo;
+    private Boolean onlyValid;
+    private String lang;
+    private String clientData;
 }

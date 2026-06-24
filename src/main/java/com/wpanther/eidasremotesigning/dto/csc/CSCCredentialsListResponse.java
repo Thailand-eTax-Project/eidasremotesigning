@@ -15,4 +15,5 @@ import java.util.List;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class CSCCredentialsListResponse {
     private List<String> credentialIDs;
+    private List<CSCCertificateInfo> credentialInfos;
 }
