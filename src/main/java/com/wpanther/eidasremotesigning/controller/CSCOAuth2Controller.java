@@ -35,30 +35,34 @@ public class CSCOAuth2Controller {
             @RequestParam String redirect_uri,
             @RequestParam(required = false) String scope,
             @RequestParam(required = false) String state,
+            @RequestParam(required = false) String code_challenge,
+            @RequestParam(required = false) String code_challenge_method,
+            @RequestParam(required = false) String credentialID,
             HttpServletRequest request,
             HttpServletResponse response) throws Exception {
-        
+
         log.debug("CSC OAuth2 authorize request from client: {}", client_id);
-        
+
         // Validate request parameters
         if (!"code".equals(response_type)) {
-            sendErrorRedirect(redirect_uri, "unsupported_response_type", 
+            sendErrorRedirect(redirect_uri, "unsupported_response_type",
                     "Only code response type is supported", state, response);
             return;
         }
-        
+
         // Generate an authorization code
         String authCode = UUID.randomUUID().toString();
-        
-        // Store the authorization request
-        oAuth2Service.storeAuthorizationRequest(authCode, client_id, redirect_uri, scope, state);
-        
+
+        // Store the authorization request (with PKCE params and credentialID)
+        oAuth2Service.storeAuthorizationRequest(authCode, client_id, redirect_uri, scope, state,
+                code_challenge, code_challenge_method, credentialID);
+
         // Redirect to consent page or directly to callback based on configuration
         String callbackUrl = UriComponentsBuilder.fromUriString(redirect_uri)
                 .queryParam("code", authCode)
                 .queryParam("state", state)
                 .build().toUriString();
-        
+
         // For now, we'll just redirect back with the code (auto-approve)
         response.sendRedirect(callbackUrl);
     }
@@ -75,37 +79,52 @@ public class CSCOAuth2Controller {
             @RequestParam(required = false) String client_id,
             @RequestParam(required = false) String client_secret,
             @RequestParam(required = false) String refresh_token,
+            @RequestParam(required = false) String code_verifier,
             HttpServletRequest request) {
-        
+
         log.debug("CSC OAuth2 token request with grant type: {}", grant_type);
-        
+
         CSCOAuth2TokenResponse response;
-        
+
         // Handle different grant types
         switch (grant_type) {
             case "authorization_code":
                 if (code == null || redirect_uri == null) {
                     throw new CSCOAuth2Exception("invalid_request", "Missing required parameters");
                 }
-                response = oAuth2Service.exchangeAuthorizationCode(code, redirect_uri, client_id, client_secret);
+                response = oAuth2Service.exchangeAuthorizationCode(code, redirect_uri, client_id,
+                        client_secret, code_verifier);
                 break;
-                
+
             case "refresh_token":
                 if (refresh_token == null) {
                     throw new CSCOAuth2Exception("invalid_request", "Missing refresh token");
                 }
                 response = oAuth2Service.refreshAccessToken(refresh_token, client_id, client_secret);
                 break;
-                
+
             case "client_credentials":
                 response = oAuth2Service.clientCredentialsGrant(client_id, client_secret);
                 break;
-                
+
             default:
                 throw new CSCOAuth2Exception("unsupported_grant_type", "Unsupported grant type");
         }
-        
+
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * OAuth2 token revocation endpoint (RFC 7009, CSC spec §8.4.5).
+     * Returns HTTP 204 No Content; unknown tokens are silently accepted.
+     */
+    @PostMapping("/revoke")
+    public ResponseEntity<Void> revoke(
+            @RequestParam String token,
+            @RequestParam(required = false) String token_type_hint) {
+        log.debug("CSC OAuth2 revoke request");
+        oAuth2Service.revokeToken(token, token_type_hint);
+        return ResponseEntity.noContent().build();
     }
     
     /**

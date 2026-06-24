@@ -32,4 +32,7 @@ public class CSCOAuth2TokenResponse {
     
     @JsonProperty("scope")
     private String scope;
+
+    @JsonProperty("credentialID")
+    private String credentialID;
 }

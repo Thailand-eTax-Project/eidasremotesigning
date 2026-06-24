@@ -9,6 +9,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
@@ -39,17 +42,24 @@ public class CSCOAuth2Service {
     /**
      * Stores an authorization request for OAuth2 flow
      */
-    public void storeAuthorizationRequest(String code, String clientId, String redirectUri, 
-                                          String scope, String state) {
+    public void storeAuthorizationRequest(String code, String clientId, String redirectUri,
+                                          String scope, String state,
+                                          String codeChallenge, String codeChallengeMethod,
+                                          String credentialID) {
         // Validate client exists
         clientRepository.findByClientId(clientId)
                 .orElseThrow(() -> new CSCOAuth2Exception("invalid_client", "Client not found"));
-        
+
         // Store authorization request
         authorizationRequests.put(code, new AuthorizationRequest(
-                clientId, redirectUri, scope, state, Instant.now()));
-        
+                clientId, redirectUri, scope, state,
+                codeChallenge, codeChallengeMethod, credentialID,
+                Instant.now()));
+
         // Set expiration (auth codes expire in 10 minutes)
+        // NOTE: existing thread-per-auth-code pattern is retained (out of scope, future cleanup).
+        // A future cleanup should replace it with ScheduledExecutorService.schedule() or a
+        // TTL-aware ConcurrentHashMap wrapper.
         new Thread(() -> {
             try {
                 Thread.sleep(600000); // 10 minutes
@@ -59,51 +69,63 @@ public class CSCOAuth2Service {
             }
         }).start();
     }
-    
+
     /**
      * Exchanges an authorization code for access and refresh tokens
      */
-    public CSCOAuth2TokenResponse exchangeAuthorizationCode(String code, String redirectUri, 
-                                                         String clientId, String clientSecret) {
+    public CSCOAuth2TokenResponse exchangeAuthorizationCode(String code, String redirectUri,
+                                                         String clientId, String clientSecret,
+                                                         String codeVerifier) {
         // Validate authorization code
         AuthorizationRequest authRequest = authorizationRequests.get(code);
         if (authRequest == null) {
             throw new CSCOAuth2Exception("invalid_grant", "Authorization code is invalid or expired");
         }
-        
+
         // Validate redirect URI
         if (!authRequest.redirectUri.equals(redirectUri)) {
             throw new CSCOAuth2Exception("invalid_grant", "Redirect URI does not match");
         }
-        
+
+        // PKCE validation (RFC 7636 §4.6)
+        if (authRequest.codeChallenge != null) {
+            if (codeVerifier == null) {
+                throw new CSCOAuth2Exception("invalid_grant", "code_verifier is required");
+            }
+            String computedChallenge = computeCodeChallenge(codeVerifier, authRequest.codeChallengeMethod);
+            if (!computedChallenge.equals(authRequest.codeChallenge)) {
+                throw new CSCOAuth2Exception("invalid_grant", "code_verifier does not match code_challenge");
+            }
+        }
+
         // Validate client
         OAuth2Client client = clientRepository.findByClientId(authRequest.clientId)
                 .orElseThrow(() -> new CSCOAuth2Exception("invalid_client", "Client not found"));
-        
+
         // Validate client credentials if provided
         if (clientId != null && clientSecret != null) {
             if (!client.getClientId().equals(clientId)) {
                 throw new CSCOAuth2Exception("invalid_client", "Client ID does not match");
             }
-            
+
             if (!passwordEncoder.matches(clientSecret, client.getClientSecret())) {
                 throw new CSCOAuth2Exception("invalid_client", "Invalid client secret");
             }
         }
-        
+
         // Generate tokens
         String accessToken = generateToken();
         String refreshToken = generateToken();
-        
+
         // Store token information
         Instant expiresAt = Instant.now().plusSeconds(ACCESS_TOKEN_EXPIRATION);
         TokenInfo tokenInfo = new TokenInfo(client.getClientId(), authRequest.scope, expiresAt);
         accessTokens.put(accessToken, tokenInfo);
         refreshTokens.put(refreshToken, accessToken);
-        
+
         // Remove used authorization code
         authorizationRequests.remove(code);
-        
+
         // Return token response
         return CSCOAuth2TokenResponse.builder()
                 .access_token(accessToken)
@@ -111,6 +133,7 @@ public class CSCOAuth2Service {
                 .expires_in(ACCESS_TOKEN_EXPIRATION)
                 .refresh_token(refreshToken)
                 .scope(authRequest.scope)
+                .credentialID(authRequest.credentialID)
                 .build();
     }
     
@@ -229,6 +252,47 @@ public class CSCOAuth2Service {
         secureRandom.nextBytes(tokenBytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes);
     }
+
+    /**
+     * Revokes an access or refresh token (RFC 7009 §2.2, CSC spec §8.4.5).
+     * Silently succeeds when the token is unknown or already expired.
+     */
+    public void revokeToken(String token, String tokenTypeHint) {
+        if (token == null) {
+            log.debug("Revoke called with null token; ignoring");
+            return;
+        }
+        if (accessTokens.remove(token) != null) {
+            refreshTokens.entrySet().removeIf(e -> token.equals(e.getValue()));
+            log.debug("Revoked access token");
+            return;
+        }
+        if (refreshTokens.remove(token) != null) {
+            log.debug("Revoked refresh token");
+            return;
+        }
+        log.debug("Token not found for revocation (may already be expired): hint={}", tokenTypeHint);
+    }
+
+    /**
+     * Computes a PKCE code challenge from the verifier per RFC 7636 §4.2.
+     * Supports "plain" (verifier returned as-is) and "S256" (BASE64URL(SHA256(verifier))).
+     */
+    private String computeCodeChallenge(String codeVerifier, String method) {
+        if ("plain".equals(method) || method == null) {
+            return codeVerifier;
+        }
+        if ("S256".equals(method)) {
+            try {
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
+                byte[] hash = digest.digest(codeVerifier.getBytes(StandardCharsets.US_ASCII));
+                return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+            } catch (NoSuchAlgorithmException e) {
+                throw new CSCOAuth2Exception("server_error", "SHA-256 not available");
+            }
+        }
+        throw new CSCOAuth2Exception("invalid_request", "Unsupported code_challenge_method: " + method);
+    }
     
     /**
      * Data class for storing authorization requests
@@ -238,14 +302,21 @@ public class CSCOAuth2Service {
         private final String redirectUri;
         private final String scope;
         private final String state;
+        private final String codeChallenge;
+        private final String codeChallengeMethod;
+        private final String credentialID;
         private final Instant createdAt;
-        
-        public AuthorizationRequest(String clientId, String redirectUri, String scope, 
-                                   String state, Instant createdAt) {
+
+        public AuthorizationRequest(String clientId, String redirectUri, String scope,
+                                   String state, String codeChallenge, String codeChallengeMethod,
+                                   String credentialID, Instant createdAt) {
             this.clientId = clientId;
             this.redirectUri = redirectUri;
             this.scope = scope;
             this.state = state;
+            this.codeChallenge = codeChallenge;
+            this.codeChallengeMethod = codeChallengeMethod;
+            this.credentialID = credentialID;
             this.createdAt = createdAt;
         }
     }
