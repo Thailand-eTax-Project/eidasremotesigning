@@ -44,7 +44,6 @@ public class CSCAuthorizeRequest {
         @NotBlank(message = "authData id is required")
         private String id;
 
-        @NotBlank(message = "authData value is required")
         private String value;
     }
 }

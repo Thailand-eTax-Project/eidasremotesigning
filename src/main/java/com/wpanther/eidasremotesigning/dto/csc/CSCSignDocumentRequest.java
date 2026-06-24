@@ -1,7 +1,7 @@
 package com.wpanther.eidasremotesigning.dto.csc;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.wpanther.eidasremotesigning.validation.AtLeastOneOf;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -15,9 +15,12 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@AtLeastOneOf(
+    fields = {"documentDigests", "documents"},
+    message = "Either documentDigests or documents must be provided"
+)
 public class CSCSignDocumentRequest {
 
-    @NotBlank(message = "credentialID is required")
     private String credentialID;
 
     private String signatureQualifier;
@@ -56,9 +59,7 @@ public class CSCSignDocumentRequest {
         private String signAlgo;
 
         private String signAlgoParams;
-
         private String signed_envelope_property;
-
         private List<SignedAttribute> signed_props;
     }
 
@@ -80,9 +81,7 @@ public class CSCSignDocumentRequest {
         private String signAlgo;
 
         private String signAlgoParams;
-
         private String signed_envelope_property;
-
         private List<SignedAttribute> signed_props;
     }
 
