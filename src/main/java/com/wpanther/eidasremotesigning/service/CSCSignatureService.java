@@ -578,14 +578,11 @@ public class CSCSignatureService {
             
             byte[] timestampTokenBytes = timeStampToken.getBytes();
             
-            String timestampToken = Base64.getEncoder().encodeToString(timestampTokenBytes);
-            String timestampDigest = Base64.getEncoder().encodeToString(digestBytes);
-            
+            String timestamp = *****************().encodeToString(timestampTokenBytes);
+
             // Return response
             return CSCTimestampResponse.builder()
-                    .timestampToken(timestampToken)
-                    .timestampDigest(timestampDigest)
-                    .timestampGenerationTime(Instant.now().toEpochMilli())
+                    .timestamp(timestamp)
                     .build();
             
         } catch (Exception e) {
