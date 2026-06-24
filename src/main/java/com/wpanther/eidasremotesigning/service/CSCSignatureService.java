@@ -7,6 +7,7 @@ import com.wpanther.eidasremotesigning.entity.SigningCertificate;
 import com.wpanther.eidasremotesigning.entity.SigningLog;
 import com.wpanther.eidasremotesigning.entity.TransactionAuthorization;
 import com.wpanther.eidasremotesigning.exception.SigningException;
+import com.wpanther.eidasremotesigning.exception.SigningInProgressException;
 import com.wpanther.eidasremotesigning.repository.AsyncOperationRepository;
 import com.wpanther.eidasremotesigning.repository.SigningCertificateRepository;
 import com.wpanther.eidasremotesigning.repository.SigningLogRepository;
@@ -493,47 +494,40 @@ public class CSCSignatureService {
             String clientId = currentClientId();
             String operationId = request.getRequestID();
 
-            // Get operation (checks cache first, then DB)
             AsyncOperation operation = asyncOperationService
                     .getOperation(operationId, clientId)
                     .orElseThrow(() -> new SigningException("Operation not found"));
 
-            // Build base response
-            CSCSignatureStatusResponse.CSCSignatureStatusResponseBuilder builder =
-                    CSCSignatureStatusResponse.builder()
-                            .status(operation.getStatus());
-
-            // Add error message if failed
-            if (AsyncOperationService.STATUS_FAILED.equals(operation.getStatus())) {
-                builder.errorMessage(operation.getErrorMessage());
+            if (AsyncOperationService.STATUS_CREATED.equals(operation.getStatus())
+                    || AsyncOperationService.STATUS_PROCESSING.equals(operation.getStatus())) {
+                throw new SigningInProgressException(operationId);
             }
 
-            // Add results if completed
-            if (AsyncOperationService.STATUS_COMPLETED.equals(operation.getStatus()) &&
-                    operation.getResultData() != null) {
+            if (AsyncOperationService.STATUS_FAILED.equals(operation.getStatus())) {
+                throw new SigningException("Signing operation failed: " +
+                        (operation.getErrorMessage() != null ? operation.getErrorMessage() : "unknown error"));
+            }
 
-                // Deserialize based on operation type
+            CSCSignatureStatusResponse.CSCSignatureStatusResponseBuilder builder =
+                    CSCSignatureStatusResponse.builder();
+
+            if (operation.getResultData() != null) {
                 if (AsyncOperationService.TYPE_SIGN_HASH.equals(operation.getOperationType())) {
                     CSCSignatureResponse result = asyncOperationService.deserializeResult(
-                            operation.getResultData(),
-                            CSCSignatureResponse.class
-                    );
+                            operation.getResultData(), CSCSignatureResponse.class);
                     builder.signatures(result.getSignatures());
 
                 } else if (AsyncOperationService.TYPE_SIGN_DOCUMENT.equals(operation.getOperationType())) {
                     CSCSignDocumentResponse result = asyncOperationService.deserializeResult(
-                            operation.getResultData(),
-                            CSCSignDocumentResponse.class
-                    );
+                            operation.getResultData(), CSCSignDocumentResponse.class);
                     builder.documentWithSignature(result.getDocumentWithSignature())
-                            .signatureObject(result.getSignatureObject())
-                            .responseID(result.getResponseID());
+                            .signatureObject(result.getSignatureObject());
                 }
             }
 
             return builder.build();
 
-        } catch (SigningException se) {
+        } catch (SigningInProgressException | SigningException se) {
             throw se;
         } catch (Exception e) {
             log.error("Error in getSignatureStatus", e);

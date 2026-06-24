@@ -3,6 +3,7 @@ package com.wpanther.eidasremotesigning.dto;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wpanther.eidasremotesigning.dto.csc.CSCSignatureResponse;
+import com.wpanther.eidasremotesigning.dto.csc.CSCSignatureStatusResponse;
 import com.wpanther.eidasremotesigning.dto.csc.CSCTimestampResponse;
 import org.junit.jupiter.api.Test;
 
@@ -54,5 +55,68 @@ class CSCSignatureDtoTest {
 
         JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(response));
         assertThat(json.get("signatures").get(0).asText()).isEqualTo("abc123");
+    }
+
+    @Test
+    void signatureStatusResponse_documentWithSignature_usesPascalCase() throws Exception {
+        CSCSignatureStatusResponse response = CSCSignatureStatusResponse.builder()
+                .documentWithSignature(List.of("abc123"))
+                .build();
+
+        JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(response));
+
+        assertThat(json.has("DocumentWithSignature"))
+                .as("spec §11.12 requires PascalCase 'DocumentWithSignature'")
+                .isTrue();
+        assertThat(json.has("documentWithSignature"))
+                .as("camelCase must not appear")
+                .isFalse();
+    }
+
+    @Test
+    void signatureStatusResponse_signatureObject_usesPascalCase() throws Exception {
+        CSCSignatureStatusResponse response = CSCSignatureStatusResponse.builder()
+                .signatureObject(List.of("sig123"))
+                .build();
+
+        JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(response));
+
+        assertThat(json.has("SignatureObject"))
+                .as("spec §11.12 requires PascalCase 'SignatureObject'")
+                .isTrue();
+        assertThat(json.has("signatureObject"))
+                .as("camelCase must not appear")
+                .isFalse();
+    }
+
+    @Test
+    void signatureStatusResponse_noNonSpecFields() throws Exception {
+        // Use reflection to assert the non-spec fields do not exist on the class itself.
+        // @JsonInclude(NON_NULL) hides null fields from JSON output, so a JSON-only check
+        // would PASS even if the (null) fields still exist on the class.
+        List<String> fieldNames = Arrays.stream(CSCSignatureStatusResponse.class.getDeclaredFields())
+                .map(Field::getName)
+                .collect(Collectors.toList());
+
+        assertThat(fieldNames)
+                .as("status is not in spec §11.12 completed response")
+                .doesNotContain("status");
+        assertThat(fieldNames)
+                .as("errorMessage is not in spec §11.12 response")
+                .doesNotContain("errorMessage");
+        assertThat(fieldNames)
+                .as("signatureAlgorithm is not in spec §11.12 response")
+                .doesNotContain("signatureAlgorithm");
+        assertThat(fieldNames)
+                .as("timestampData is not in spec §11.12 response")
+                .doesNotContain("timestampData");
+
+        // Sanity: the response still serializes the allowed spec fields.
+        CSCSignatureStatusResponse response = CSCSignatureStatusResponse.builder()
+                .signatures(new String[]{"sig"})
+                .build();
+
+        JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(response));
+        assertThat(json.get("signatures").get(0).asText()).isEqualTo("sig");
     }
 }

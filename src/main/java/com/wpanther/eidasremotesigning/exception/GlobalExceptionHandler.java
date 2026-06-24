@@ -50,6 +50,16 @@ public class GlobalExceptionHandler {
         log.error("Signing error", ex);
         return createErrorResponse(ex.getMessage(), HttpStatus.BAD_REQUEST);
     }
+
+    @ExceptionHandler(SigningInProgressException.class)
+    public ResponseEntity<CSCErrorResponse> handleSigningInProgress(SigningInProgressException ex) {
+        log.debug("Signing in progress: requestID={}", ex.getRequestID());
+        CSCErrorResponse errorResponse = CSCErrorResponse.builder()
+                .error("accepted_request")
+                .errorDescription(ex.getMessage())
+                .build();
+        return new ResponseEntity<>(errorResponse, HttpStatus.ACCEPTED);
+    }
     
     @ExceptionHandler(ClientRegistrationException.class)
     public ResponseEntity<ErrorResponse> handleClientRegistrationException(ClientRegistrationException ex) {

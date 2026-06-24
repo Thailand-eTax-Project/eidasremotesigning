@@ -52,16 +52,26 @@ public class CSCSignatureController {
     
     /**
      * Get signature status
-     * Returns the current status of an asynchronous signing operation
+     * Returns the current status of an asynchronous signing operation.
+     * Returns 202 Accepted with an error-shaped body when the operation is still in progress,
+     * per CSC API v2.0 spec §11.12.
      */
     @PostMapping("/signPolling")
-    public ResponseEntity<CSCSignatureStatusResponse> getSignatureStatus(
+    public ResponseEntity<?> getSignatureStatus(
             @Valid @RequestBody CSCSignatureStatusRequest request) {
         log.debug("CSC API: Signature status request for requestID: {}",
                 request.getRequestID());
-        
-        CSCSignatureStatusResponse response = cscSignatureService.getSignatureStatus(request);
-        return ResponseEntity.ok(response);
+
+        try {
+            CSCSignatureStatusResponse response = cscSignatureService.getSignatureStatus(request);
+            return ResponseEntity.ok(response);
+        } catch (com.wpanther.eidasremotesigning.exception.SigningInProgressException e) {
+            return ResponseEntity.accepted().body(
+                    CSCSignPollingPendingResponse.builder()
+                            .error("accepted_request")
+                            .errorDescription("The previous async request has been accepted but not yet completed")
+                            .build());
+        }
     }
     
     /**

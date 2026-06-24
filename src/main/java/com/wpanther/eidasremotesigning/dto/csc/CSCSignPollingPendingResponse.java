@@ -7,22 +7,14 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
-
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class CSCSignatureStatusResponse {
+public class CSCSignPollingPendingResponse {
+    private String error;
 
-    private String[] signatures;
-
-    @JsonProperty("DocumentWithSignature")
-    private List<String> documentWithSignature;
-
-    @JsonProperty("SignatureObject")
-    private List<String> signatureObject;
-
-    private String responseID;
+    @JsonProperty("error_description")
+    private String errorDescription;
 }
