@@ -2110,116 +2110,230 @@ The following sections describe sequence diagrams for the most common operations
 
 ### 13.1 Remote Signing Service Authorization using Basic Authentication
 
-Flow:
-1. User provides login information (username/password) to the Signature Application
-2. Signature Application → `POST auth/login` with `Authorization: Basic ...` → Remote Service
-3. Remote Service returns `{"access_token": "4/CKN69L8gdSYp5bA"}`
-4. Application uses token to access protected resources
-5. On session close: `POST auth/revoke {"token": "4/CKN69L8gdSYp5bA"}` → token revoked
+```mermaid
+sequenceDiagram
+    actor User
+    participant App as Signature Application (RSCA)
+    participant RS as Remote Service (RSSP)
+
+    User->>App: Provide username/password
+    App->>RS: POST auth/login<br/>Authorization: Basic <base64(user:pass)>
+    RS-->>App: 200 OK<br/>{"access_token": "4/CKN69...", "refresh_token": "...", "expires_in": 3600}
+    App->>RS: POST <protected-method><br/>Authorization: Bearer 4/CKN69...
+    RS-->>App: 200 OK (response)
+    Note over App,RS: On session close
+    App->>RS: POST auth/revoke<br/>{"token": "4/CKN69..."}
+    RS-->>App: 204 No Content
+```
 
 ### 13.2 Remote Signing Service Authorization using OAuth2 Authorization Code Flow
 
-Flow:
-1. Signature Application → `GET oauth2/authorize?scope=service&redirect_uri=...` → Authorization Service
-2. User logs in and consents
-3. Authorization Service → `redirect_uri?code=FhkXf9P269L8g` → Signature Application
-4. Signature Application → `POST oauth2/token (grant_type=authorization_code&code=FhkXf9P269L8g)` → returns access token
-5. Application uses token for protected resources
-6. On close: `POST oauth2/revoke (token=...)` → token revoked
+```mermaid
+sequenceDiagram
+    actor User
+    participant App as Signature Application (RSCA)
+    participant AS as Authorization Server
+    participant RS as Remote Service (RSSP)
+
+    App->>AS: GET oauth2/authorize?response_type=code&scope=service<br/>&client_id=...&redirect_uri=...&code_challenge=...
+    AS->>User: Display login/consent page
+    User->>AS: Authenticate and consent
+    AS-->>App: 302 redirect_uri?code=FhkXf9P269L8g
+    App->>AS: POST oauth2/token<br/>grant_type=authorization_code&code=FhkXf9P269L8g<br/>&client_id=...&client_secret=...
+    AS-->>App: 200 OK<br/>{"access_token": "...", "refresh_token": "...", "expires_in": 3600}
+    App->>RS: POST <protected-method><br/>Authorization: Bearer <access_token>
+    RS-->>App: 200 OK (response)
+    Note over App,AS: On session close
+    App->>AS: POST oauth2/revoke<br/>token=<refresh_token>
+    AS-->>App: 204 No Content
+```
 
 ### 13.3 Create a Remote Signature with a Credential Protected by a PIN
 
-Flow:
-1. User provides PIN to Signature Application
-2. Application → `POST credentials/authorize {"credentialID": "GX0112348", "authData": [{"id": "PIN", "value": "12345678"}]}`
-3. Service verifies, returns SAD
-4. Application → `POST signatures/signHash {"hash": [...], "SAD": "..."}`
-5. Service returns signatures
+```mermaid
+sequenceDiagram
+    actor User
+    participant App as Signature Application (RSCA)
+    participant RS as Remote Service (RSSP)
+
+    User->>App: Provide PIN
+    App->>RS: POST credentials/authorize<br/>{"credentialID": "GX0112348", "numSignatures": 1,<br/>"authData": [{"id": "PIN", "value": "12345678"}]}
+    RS-->>App: 200 OK<br/>{"SAD": "_TiHRG-bAH3Xl..."}
+    App->>RS: POST signatures/signHash<br/>{"credentialID": "GX0112348", "SAD": "_TiHRG-bAH3Xl...",<br/>"hashes": ["sTOgwOm+..."], "signAlgo": "1.2.840.113549.1.1.1"}
+    RS-->>App: 200 OK<br/>{"signatures": ["KedJuTob5gt..."]}
+```
 
 ### 13.4 Create a Remote Signature with a Credential Protected by an "Online" OTP (SMS)
 
-Flow:
-1. Application → `POST credentials/getChallenge {"credentialID": "GX0112348", "authObjectID": "OTP"}`
-2. Service sends OTP via SMS
-3. User enters OTP
-4. Application → `POST credentials/authorize {"credentialID": ..., "authData": [{"id": "OTP", "value": "947012"}]}`
-5. Service returns SAD
-6. Application → `POST signatures/signHash` → returns signature
+```mermaid
+sequenceDiagram
+    actor User
+    participant App as Signature Application (RSCA)
+    participant RS as Remote Service (RSSP)
+
+    App->>RS: POST credentials/getChallenge<br/>{"credentialID": "GX0112348", "authObjectID": "OTP"}
+    RS-->>App: 204 No Content (OTP sent via SMS)
+    RS--)User: SMS with OTP code
+    User->>App: Enter OTP "947012"
+    App->>RS: POST credentials/authorize<br/>{"credentialID": "GX0112348", "numSignatures": 1,<br/>"authData": [{"id": "OTP", "value": "947012"}]}
+    RS-->>App: 200 OK<br/>{"SAD": "_TiHRG-bAH3Xl..."}
+    App->>RS: POST signatures/signHash<br/>{"credentialID": "GX0112348", "SAD": "...",<br/>"hashes": ["sTOgwOm+..."], "signAlgo": "..."}
+    RS-->>App: 200 OK<br/>{"signatures": ["KedJuTob5gt..."]}
+```
 
 ### 13.5 Create a Remote Signature with a Credential Protected by a Mobile App
 
-Flow:
-1. Application → `POST credentials/authorize {"credentialID": ..., "authData": [{"id": "mobile"}]}`
-2. Service returns `{"handle": "878287f37b2bv..."}` (HTTP 202)
-3. Application polls: `POST credentials/authorizeCheck {"handle": "..."}` (loop while HTTP 202)
-4. User receives push notification; user authorizes on mobile
-5. Next `authorizeCheck` returns SAD
-6. Application → `POST signatures/signHash` → returns signature
+```mermaid
+sequenceDiagram
+    actor User
+    participant App as Signature Application (RSCA)
+    participant RS as Remote Service (RSSP)
+
+    App->>RS: POST credentials/authorize<br/>{"credentialID": "GX0112348", "numSignatures": 1,<br/>"authData": [{"id": "mobile"}]}
+    RS-->>App: 202 Accepted<br/>{"handle": "878287f37b2bv..."}
+    RS--)User: Push notification on mobile app
+    loop Poll until authorized
+        App->>RS: POST credentials/authorizeCheck<br/>{"handle": "878287f37b2bv..."}
+        RS-->>App: 202 Accepted (still pending)<br/>{"handle": "878287f37b2bv..."}
+    end
+    User->>RS: Authorize on mobile app
+    App->>RS: POST credentials/authorizeCheck<br/>{"handle": "878287f37b2bv..."}
+    RS-->>App: 200 OK<br/>{"SAD": "_TiHRG-bAH3Xl..."}
+    App->>RS: POST signatures/signHash<br/>{"credentialID": "GX0112348", "SAD": "...",<br/>"hashes": ["sTOgwOm+..."], "signAlgo": "..."}
+    RS-->>App: 200 OK<br/>{"signatures": ["KedJuTob5gt..."]}
+```
 
 ### 13.6 Create a Remote Signature with PIN and Online OTP
 
-Flow:
-1. Request OTP via `getChallenge`
-2. User enters both PIN and OTP
-3. `POST credentials/authorize` with `authData: [{"id": "PIN", "value": "12345678"}, {"id": "OTP", "value": "947012"}]`
-4. Get SAD → `POST signatures/signHash` → return signature
+```mermaid
+sequenceDiagram
+    actor User
+    participant App as Signature Application (RSCA)
+    participant RS as Remote Service (RSSP)
+
+    App->>RS: POST credentials/getChallenge<br/>{"credentialID": "GX0112348", "authObjectID": "OTP"}
+    RS-->>App: 204 No Content (OTP sent via SMS)
+    RS--)User: SMS with OTP code
+    User->>App: Enter PIN "12345678" and OTP "947012"
+    App->>RS: POST credentials/authorize<br/>{"credentialID": "GX0112348", "numSignatures": 1,<br/>"authData": [{"id": "PIN", "value": "12345678"},<br/>             {"id": "OTP", "value": "947012"}]}
+    RS-->>App: 200 OK<br/>{"SAD": "_TiHRG-bAH3Xl..."}
+    App->>RS: POST signatures/signHash<br/>{"credentialID": "GX0112348", "SAD": "...",<br/>"hashes": ["sTOgwOm+..."], "signAlgo": "..."}
+    RS-->>App: 200 OK<br/>{"signatures": ["KedJuTob5gt..."]}
+```
 
 ### 13.7 Create a Remote Signature with OAuth2 Authorization Code Flow
 
-Flow:
-1. Application → `GET oauth2/authorize?scope=credential&credentialID=GX0112348`
-2. User authorizes
-3. Authorization code → `POST oauth2/token` → access token with credential scope
-4. Application uses token with scope "credential" as SAD: `POST signatures/signHash {"SAD": "<credential_access_token>"}`
-5. Returns signature
+```mermaid
+sequenceDiagram
+    actor User
+    participant App as Signature Application (RSCA)
+    participant AS as Authorization Server
+    participant RS as Remote Service (RSSP)
+
+    App->>AS: GET oauth2/authorize?response_type=code<br/>&scope=credential&credentialID=GX0112348<br/>&numSignatures=1&hashes=sTOgwOm+...&hashAlgorithmOID=2.16...
+    AS->>User: Display credential authorization consent
+    User->>AS: Authenticate and authorize
+    AS-->>App: 302 redirect_uri?code=FhkXf9P269L8g
+    App->>AS: POST oauth2/token<br/>grant_type=authorization_code&code=FhkXf9P269L8g
+    AS-->>App: 200 OK<br/>{"access_token": "<credential_token>", "expires_in": 300}
+    Note over App,RS: Credential-scope access token acts as SAD
+    App->>RS: POST signatures/signHash<br/>{"credentialID": "GX0112348",<br/>"SAD": "<credential_token>",<br/>"hashes": ["sTOgwOm+..."], "signAlgo": "..."}
+    RS-->>App: 200 OK<br/>{"signatures": ["KedJuTob5gt..."]}
+```
 
 ### 13.8 Create a Remote Signature with Credential and Signature Qualifier
 
-Flow:
-1. Application → `GET oauth2/authorize?scope=credential&signatureQualifier=eu_eidas_qes`
-2. AS selects appropriate credential; user authorizes
-3. Token returned with `credentialID` included
-4. Application → `POST signatures/signDoc {"signatureQualifier": "eu_eidas", "documentDigests": [...]}` using the credential access token
+```mermaid
+sequenceDiagram
+    actor User
+    participant App as Signature Application (RSCA)
+    participant AS as Authorization Server
+    participant RS as Remote Service (RSSP)
+
+    App->>AS: GET oauth2/authorize?response_type=code<br/>&scope=credential&signatureQualifier=eu_eidas_qes<br/>&numSignatures=1&hashes=...&hashAlgorithmOID=...
+    AS->>User: Display credential selection and consent
+    User->>AS: Select credential and authorize
+    AS-->>App: 302 redirect_uri?code=FhkXf9P269L8g
+    App->>AS: POST oauth2/token<br/>grant_type=authorization_code&code=FhkXf9P269L8g
+    AS-->>App: 200 OK<br/>{"access_token": "...", "credentialID": "GX0112348", "expires_in": 300}
+    Note over App: AS resolved signatureQualifier to credentialID
+    App->>RS: POST signatures/signDoc<br/>{"credentialID": "GX0112348",<br/>"signatureQualifier": "eu_eidas_qes",<br/>"documentDigests": [{"hashes": "...", "signature_format": "P", "signAlgo": "..."}]}
+    RS-->>App: 200 OK<br/>{"DocumentWithSignature": ["MILu..."]}
+```
 
 ### 13.9 Create a Remote Signature with OAuth2 and Pushed and Rich Authorization Request
 
-Flow:
-1. Application → `POST oauth2/pushed_authorize` with `authorization_details` (Rich Authorization Request)
-2. Returns `request_uri`
-3. Application → `GET oauth2/authorize?request_uri=...`
-4. User logs in and consents
-5. Exchange code for access token
-6. Application → `POST signatures/signDoc` using the access token
+```mermaid
+sequenceDiagram
+    actor User
+    participant App as Signature Application (RSCA)
+    participant AS as Authorization Server
+    participant RS as Remote Service (RSSP)
+
+    App->>AS: POST oauth2/pushed_authorize<br/>Authorization: Basic <client_credentials><br/>authorization_details=[{"type":"credential","signatureQualifier":"eu_eidas_qes",<br/>"documentDigests":[...],"hashAlgorithmOID":"..."}]
+    AS-->>App: 201 Created<br/>{"request_uri": "urn:example:bwc4JK-ESC0w8acc191e", "expires_in": 90}
+    App->>AS: GET oauth2/authorize?client_id=...&request_uri=urn:example:bwc4JK-ESC0w8acc191e
+    AS->>User: Display consent page with document digests
+    User->>AS: Authenticate and authorize
+    AS-->>App: 302 redirect_uri?code=FhkXf9P269L8g
+    App->>AS: POST oauth2/token<br/>grant_type=authorization_code&code=FhkXf9P269L8g
+    AS-->>App: 200 OK<br/>{"access_token": "...", "authorization_details": [...], "expires_in": 300}
+    App->>RS: POST signatures/signDoc<br/>{"signatureQualifier": "eu_eidas_qes",<br/>"documentDigests": [{"hashes": "...", "signature_format": "P", "signAlgo": "..."}]}
+    RS-->>App: 200 OK<br/>{"DocumentWithSignature": ["MILu..."]}
+```
 
 ### 13.10 Create a Remote Signature with RSSP-Managed Authorization
 
-Flow:
-1. Application → `POST credentials/authorize {"credentialID": "GX0112348", "authData": []}` (empty authData)
-2. Service authorizes credential use automatically
-3. Service returns SAD
-4. Application → `POST signatures/signHash` → returns signature
+```mermaid
+sequenceDiagram
+    participant App as Signature Application (RSCA)
+    participant RS as Remote Service (RSSP)
+
+    Note over App,RS: No user interaction needed — RSSP manages authorization internally
+    App->>RS: POST credentials/authorize<br/>{"credentialID": "GX0112348", "numSignatures": 1, "authData": []}
+    RS-->>App: 200 OK<br/>{"SAD": "_TiHRG-bAH3Xl..."}
+    App->>RS: POST signatures/signHash<br/>{"credentialID": "GX0112348", "SAD": "...",<br/>"hashes": ["sTOgwOm+..."], "signAlgo": "..."}
+    RS-->>App: 200 OK<br/>{"signatures": ["KedJuTob5gt..."]}
+```
 
 ### 13.11 Create Multiple Remote Signatures from a List of Hash Values
 
-Flow:
-1. Application → `POST credentials/authorize {"credentialID": ..., "numSignatures": 2, "authData": [{"id": "PIN", "value": "12345678"}]}`
-2. Returns SAD
-3. Application → `POST signatures/signHash {"hashes": [hash1, hash2, ...], "SAD": "..."}` (multiple hashes in one call)
-4. Returns multiple signatures
+```mermaid
+sequenceDiagram
+    actor User
+    participant App as Signature Application (RSCA)
+    participant RS as Remote Service (RSSP)
+
+    User->>App: Provide PIN
+    App->>RS: POST credentials/authorize<br/>{"credentialID": "GX0112348", "numSignatures": 2,<br/>"authData": [{"id": "PIN", "value": "12345678"}]}
+    RS-->>App: 200 OK<br/>{"SAD": "_TiHRG-bAH3Xl..."}
+    App->>RS: POST signatures/signHash<br/>{"credentialID": "GX0112348", "SAD": "...",<br/>"hashes": ["hash1", "hash2"], "signAlgo": "..."}
+    RS-->>App: 200 OK<br/>{"signatures": ["sig1", "sig2"]}
+```
 
 ### 13.12 Create a Remote Multi-Signatures Transaction with a PDF Document
 
 For PDFs that require multiple signatures (PDF uses nested signatures, so each hash depends on the previous signature):
 
-Flow:
-1. Application → `POST credentials/authorize {"credentialID": ..., "numSignatures": 2, "hashes": [initialHash], "authData": [PIN]}`
-2. Returns SAD 1
-3. Application → `POST signatures/signHash {"hash": [hash1], "SAD": SAD_1}` → returns Signature 1
-4. Application calculates new hash (including Signature 1)
-5. Application → `POST credentials/extendTransaction {"credentialID": ..., "hashes": [hash2], "SAD": SAD_1}`
-6. Returns SAD 2
-7. Application → `POST signatures/signHash {"hash": [hash2], "SAD": SAD_2}` → returns Signature 2
-8. Signed PDF document complete
+```mermaid
+sequenceDiagram
+    actor User
+    participant App as Signature Application (RSCA)
+    participant RS as Remote Service (RSSP)
+
+    User->>App: Provide PIN
+    App->>App: Calculate hash1 from PDF preparation
+    App->>RS: POST credentials/authorize<br/>{"credentialID": "GX0112348", "numSignatures": 2,<br/>"hashes": ["hash1"], "hashAlgorithmOID": "2.16...",<br/>"authData": [{"id": "PIN", "value": "12345678"}]}
+    RS-->>App: 200 OK<br/>{"SAD": "SAD_1"}
+    App->>RS: POST signatures/signHash<br/>{"credentialID": "GX0112348", "SAD": "SAD_1",<br/>"hashes": ["hash1"], "signAlgo": "..."}
+    RS-->>App: 200 OK<br/>{"signatures": ["Signature_1"]}
+    App->>App: Embed Signature_1 into PDF<br/>Calculate hash2 from updated PDF
+    App->>RS: POST credentials/extendTransaction<br/>{"credentialID": "GX0112348", "SAD": "SAD_1",<br/>"hashes": ["hash2"], "hashAlgorithmOID": "2.16..."}
+    RS-->>App: 200 OK<br/>{"SAD": "SAD_2"}
+    App->>RS: POST signatures/signHash<br/>{"credentialID": "GX0112348", "SAD": "SAD_2",<br/>"hashes": ["hash2"], "signAlgo": "..."}
+    RS-->>App: 200 OK<br/>{"signatures": ["Signature_2"]}
+    App->>App: Embed Signature_2 → signed PDF complete
+```
 
 ---
 
