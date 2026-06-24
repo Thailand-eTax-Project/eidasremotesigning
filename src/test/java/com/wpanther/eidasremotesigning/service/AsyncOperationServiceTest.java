@@ -82,7 +82,6 @@ class AsyncOperationServiceTest {
         AsyncOperation operation = createTestOperation();
         CSCSignatureResponse resultData = CSCSignatureResponse.builder()
                 .signatures(new String[]{"signature1", "signature2"})
-                .signatureAlgorithm("SHA256withRSA")
                 .build();
 
         byte[] serializedData = "{\"signatures\":[\"signature1\",\"signature2\"]}".getBytes();
@@ -232,10 +231,9 @@ class AsyncOperationServiceTest {
     @Test
     void testDeserializeResult() throws Exception {
         // Arrange
-        byte[] serializedData = "{\"signatures\":[\"sig1\"],\"signatureAlgorithm\":\"SHA256withRSA\"}".getBytes();
+        byte[] serializedData = "{\"signatures\":[\"sig1\"]}".getBytes();
         CSCSignatureResponse expectedResult = CSCSignatureResponse.builder()
                 .signatures(new String[]{"sig1"})
-                .signatureAlgorithm("SHA256withRSA")
                 .build();
 
         when(objectMapper.readValue(serializedData, CSCSignatureResponse.class))
@@ -247,7 +245,7 @@ class AsyncOperationServiceTest {
 
         // Assert
         assertThat(result).isNotNull();
-        assertThat(result.getSignatureAlgorithm()).isEqualTo("SHA256withRSA");
+        assertThat(result.getSignatures()).containsExactly("sig1");
         verify(objectMapper).readValue(serializedData, CSCSignatureResponse.class);
     }
 

@@ -305,9 +305,6 @@ public class CSCApiService {
                 jcaSigAlgo = OIDMapper.deriveJcaSigAlgo(keyAlgoForSig, hashAlgo);
             }
 
-            // Convert signature algorithm to OID for response
-            String sigAlgoOid = OIDMapper.toOidSigAlgo(jcaSigAlgo);
-
             // Results for multiple hash values
             String[] signatures = new String[request.getHashes().length];
 
@@ -350,7 +347,6 @@ public class CSCApiService {
 
             // Build and return CSC response
             return CSCSignatureResponse.builder()
-                    .signatureAlgorithm(sigAlgoOid)
                     .signatures(signatures)
                     .build();
         } catch (SigningException se) {

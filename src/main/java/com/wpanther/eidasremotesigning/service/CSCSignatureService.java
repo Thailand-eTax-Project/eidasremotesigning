@@ -518,8 +518,7 @@ public class CSCSignatureService {
                             operation.getResultData(),
                             CSCSignatureResponse.class
                     );
-                    builder.signatures(result.getSignatures())
-                            .signatureAlgorithm(result.getSignatureAlgorithm());
+                    builder.signatures(result.getSignatures());
 
                 } else if (AsyncOperationService.TYPE_SIGN_DOCUMENT.equals(operation.getOperationType())) {
                     CSCSignDocumentResponse result = asyncOperationService.deserializeResult(
@@ -578,7 +577,7 @@ public class CSCSignatureService {
             
             byte[] timestampTokenBytes = timeStampToken.getBytes();
             
-            String timestamp = *****************().encodeToString(timestampTokenBytes);
+            String timestamp = Base64.getEncoder().encodeToString(timestampTokenBytes);
 
             // Return response
             return CSCTimestampResponse.builder()
