@@ -611,19 +611,31 @@ public class CSCSignatureService {
                 throw new SigningException("documentDigest is required for signature validation");
             }
 
-            // Determine JCA signature algorithm
-            String jcaSigAlgo;
-            if (request.getSignatureAlgorithm() != null && !request.getSignatureAlgorithm().isBlank()) {
-                jcaSigAlgo = OIDMapper.toJcaSigAlgo(request.getSignatureAlgorithm());
-            } else {
+            // Validate signatureAlgorithm OID (required by spec) and confirm its hash
+            // component matches the supplied hashAlgo. The actual verification uses
+            // raw NONEwithRSA/ECDSA over the pre-computed digest, so jcaSigAlgo itself
+            // is not fed to Signature.getInstance — this guard just rejects callers
+            // who pass inconsistent hashAlgo + signatureAlgorithm.
+            if (request.getSignatureAlgorithm() == null || request.getSignatureAlgorithm().isBlank()) {
                 throw new SigningException("signatureAlgorithm is required for signature validation");
             }
+            String jcaSigAlgo = OIDMapper.toJcaSigAlgo(request.getSignatureAlgorithm());
+            if (!jcaSigAlgo.toUpperCase().contains(hashAlgo.toUpperCase().replace("-", ""))) {
+                throw new SigningException(
+                        "signatureAlgorithm (" + jcaSigAlgo + ") does not match hashAlgo (" + hashAlgo + ")");
+            }
 
-            // Verify using certificate's public key
-            java.security.Signature sig = java.security.Signature.getInstance(jcaSigAlgo);
-            sig.initVerify(certificate.getPublicKey());
-            sig.update(digestBytes);
-            boolean valid = sig.verify(signatureBytes);
+            // The supplied documentDigest is ALREADY a hash. Verifying it with a
+            // hash-and-verify JCA algorithm (e.g. SHA256withRSA via update(digest))
+            // would hash it a second time, checking the signature against
+            // SHA256(digest). This must mirror the signHash fix (commit b26d64a):
+            // verify the raw digest with NONEwithRSA/ECDSA, wrapping RSA digests in
+            // their PKCS#1 v1.5 DigestInfo first — exactly how a real CMS/XAdES/
+            // PAdES verifier treats the signature.
+            String keyAlgo = certificate.getPublicKey().getAlgorithm();
+            boolean valid = verifyPreComputedDigest(
+                    digestBytes, hashAlgo, keyAlgo,
+                    certificate.getPublicKey(), signatureBytes);
 
             // Check certificate validity dates
             String certStatus;
@@ -650,6 +662,50 @@ public class CSCSignatureService {
             log.error("Error in validateSignature", e);
             throw new SigningException("Failed to validate signature: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Verifies a signature over a PRE-COMPUTED digest without re-hashing it. Mirrors
+     * {@code CSCApiService.signPreComputedDigest}: RSA keys verify a PKCS#1 v1.5
+     * DigestInfo wrapping of the digest with NONEwithRSA (so a signature produced by
+     * {@code <hash>withRSA} verifies); EC keys verify the raw digest with NONEwithECDSA.
+     * Using a hash-and-verify JCA algorithm here would double-hash and falsely reject
+     * every legitimate CSC signHash signature.
+     */
+    private boolean verifyPreComputedDigest(byte[] digest, String hashAlgo, String keyAlgo,
+            java.security.PublicKey publicKey, byte[] signatureBytes) throws Exception {
+        String key = keyAlgo == null ? "" : keyAlgo.toUpperCase();
+        byte[] toVerify;
+        String rawAlgo;
+        if (key.startsWith("RSA")) {
+            toVerify = rsaDigestInfo(hashAlgo, digest);
+            rawAlgo = "NONEwithRSA";
+        } else if (key.startsWith("EC")) {
+            toVerify = digest;
+            rawAlgo = "NONEwithECDSA";
+        } else {
+            throw new SigningException("Unsupported key algorithm for digest verification: " + keyAlgo);
+        }
+        java.security.Signature sig = java.security.Signature.getInstance(rawAlgo);
+        sig.initVerify(publicKey);
+        sig.update(toVerify);
+        return sig.verify(signatureBytes);
+    }
+
+    /** Wraps a digest in its PKCS#1 v1.5 DigestInfo DER structure for raw RSA verification. */
+    private static byte[] rsaDigestInfo(String hashAlgo, byte[] digest) {
+        String h = hashAlgo == null ? "" : hashAlgo.toUpperCase().replace("-", "");
+        String prefixHex = switch (h) {
+            case "SHA256" -> "3031300d060960864801650304020105000420";
+            case "SHA384" -> "3041300d060960864801650304020205000430";
+            case "SHA512" -> "3051300d060960864801650304020305000440";
+            default -> throw new SigningException("Unsupported hash for RSA DigestInfo: " + hashAlgo);
+        };
+        byte[] prefix = java.util.HexFormat.of().parseHex(prefixHex);
+        byte[] out = new byte[prefix.length + digest.length];
+        System.arraycopy(prefix, 0, out, 0, prefix.length);
+        System.arraycopy(digest, 0, out, prefix.length, digest.length);
+        return out;
     }
 
     /**
