@@ -16,7 +16,7 @@ target/
 .superpowers
 
 ### IntelliJ IDEA ###
-.idea
+.idea/
 *.iws
 *.iml
 *.ipr
