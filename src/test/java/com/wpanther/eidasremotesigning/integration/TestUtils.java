@@ -110,12 +110,27 @@ public class TestUtils {
         X509Certificate cert = (X509Certificate) certFactory.generateCertificate(
                 new java.io.ByteArrayInputStream(certificateBytes));
         
-        // Create a signature verifier
-        java.security.Signature sig = java.security.Signature.getInstance(signatureAlgorithm);
+        // The signature is over a PRE-COMPUTED digest. Verifying with a full
+        // "SHA256withRSA" verifier and update(digest) would hash the digest AGAIN,
+        // i.e. check the signature against SHA256(digest) — which masks a signer that
+        // double-hashes. Verify correctly: wrap the digest in a PKCS#1 DigestInfo and
+        // use NONEwithRSA (raw RSA, no re-hash), the way a real CMS/XAdES verifier does.
+        byte[] digestInfo = sha256DigestInfo(digestBytes);
+        java.security.Signature sig = java.security.Signature.getInstance("NONEwithRSA");
         sig.initVerify(cert.getPublicKey());
-        sig.update(digestBytes);
-        
+        sig.update(digestInfo);
+
         // Verify the signature
         return sig.verify(signatureBytes);
+    }
+
+    /** Wrap a SHA-256 digest in its PKCS#1 v1.5 DigestInfo DER structure. */
+    private static byte[] sha256DigestInfo(byte[] digest) {
+        byte[] prefix = java.util.HexFormat.of()
+                .parseHex("3031300d060960864801650304020105000420");
+        byte[] out = new byte[prefix.length + digest.length];
+        System.arraycopy(prefix, 0, out, 0, prefix.length);
+        System.arraycopy(digest, 0, out, prefix.length, digest.length);
+        return out;
     }
 }

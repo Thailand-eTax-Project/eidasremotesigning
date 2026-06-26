@@ -358,15 +358,12 @@ public class CSCApiService {
                             hashAlgo,
                             keyAlgoForSig);
                 } else {
-                    Signature signature;
-                    if ("PKCS11".equals(certEntity.getStorageType())) {
-                        signature = Signature.getInstance(jcaSigAlgo, certEntity.getProviderName());
-                    } else {
-                        signature = Signature.getInstance(jcaSigAlgo, "BCFIPS");
-                    }
-                    signature.initSign(privateKey);
-                    signature.update(hashBytes);
-                    signatureBytes = signature.sign();
+                    // signHash receives an ALREADY-computed digest. Signing it with a
+                    // hash-and-sign algorithm (e.g. SHA256withRSA) would hash it a second
+                    // time, producing a signature over SHA256(digest) that no CMS/XAdES/
+                    // PAdES verifier accepts. Sign the digest raw instead.
+                    signatureBytes = signPreComputedDigest(
+                            hashBytes, hashAlgo, keyAlgoForSig, privateKey, certEntity);
                 }
 
                 signatures[i] = Base64.getEncoder().encodeToString(signatureBytes);
@@ -394,6 +391,51 @@ public class CSCApiService {
             log.error("Error in signHash", e);
             throw new SigningException("Failed to sign hash: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Signs a PRE-COMPUTED digest without re-hashing it. RSA keys sign a PKCS#1 v1.5
+     * DigestInfo wrapping of the digest (so the result verifies as &lt;hash&gt;withRSA);
+     * EC keys sign the raw digest with NONEwithECDSA. This is the correct behaviour for
+     * the CSC signHash endpoint, whose input is already a hash — using a hash-and-sign
+     * JCA algorithm here would double-hash (sign over SHA-256(digest)).
+     */
+    private byte[] signPreComputedDigest(byte[] digest, String hashAlgo, String keyAlgo,
+            PrivateKey privateKey, SigningCertificate certEntity) throws Exception {
+        String provider = "PKCS11".equals(certEntity.getStorageType())
+                ? certEntity.getProviderName() : "BCFIPS";
+        String key = keyAlgo == null ? "" : keyAlgo.toUpperCase();
+        byte[] toSign;
+        String rawAlgo;
+        if (key.startsWith("RSA")) {
+            toSign = rsaDigestInfo(hashAlgo, digest);
+            rawAlgo = "NONEwithRSA";
+        } else if (key.startsWith("EC")) {
+            toSign = digest;
+            rawAlgo = "NONEwithECDSA";
+        } else {
+            throw new SigningException("Unsupported key algorithm for digest signing: " + keyAlgo);
+        }
+        Signature signature = Signature.getInstance(rawAlgo, provider);
+        signature.initSign(privateKey);
+        signature.update(toSign);
+        return signature.sign();
+    }
+
+    /** Wraps a digest in its PKCS#1 v1.5 DigestInfo DER structure for raw RSA signing. */
+    private static byte[] rsaDigestInfo(String hashAlgo, byte[] digest) {
+        String h = hashAlgo == null ? "" : hashAlgo.toUpperCase().replace("-", "");
+        String prefixHex = switch (h) {
+            case "SHA256" -> "3031300d060960864801650304020105000420";
+            case "SHA384" -> "3041300d060960864801650304020205000430";
+            case "SHA512" -> "3051300d060960864801650304020305000440";
+            default -> throw new SigningException("Unsupported hash for RSA DigestInfo: " + hashAlgo);
+        };
+        byte[] prefix = java.util.HexFormat.of().parseHex(prefixHex);
+        byte[] out = new byte[prefix.length + digest.length];
+        System.arraycopy(prefix, 0, out, 0, prefix.length);
+        System.arraycopy(digest, 0, out, prefix.length, digest.length);
+        return out;
     }
 
     private CSCCertificateInfo mapToCscCertificateInfo(SigningCertificate cert, X509Certificate x509Cert,
