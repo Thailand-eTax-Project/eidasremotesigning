@@ -381,9 +381,12 @@ public class CSCApiService {
                 signingLogService.logSuccessfulSigning(logRequest, jcaSigAlgo);
             }
 
-            // Build and return CSC response
+            // Build and return CSC response.
+            // Populate responseID for the synchronous path too (the async path already
+            // sets it). CSC clients use it as a per-operation correlation/transaction id.
             return CSCSignatureResponse.builder()
                     .signatures(signatures)
+                    .responseID(UUID.randomUUID().toString())
                     .build();
         } catch (SigningException se) {
             throw se;
