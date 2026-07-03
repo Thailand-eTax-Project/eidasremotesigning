@@ -25,7 +25,7 @@ pkcs11-tool --module "$MODULE" --token-label "$TOKEN_LABEL" --login --pin "$PIN"
 pkcs11-tool --module "$MODULE" --token-label "$TOKEN_LABEL" --login --pin "$PIN" \
   --write-object out/signer/signer.der --type cert --label etax-dev-signer --id 01
 
-rm -f out/signer/signer.pk8.der
+rm -f out/signer/signer.pk8.der out/signer/signer.der
 
 cat <<EOF
 
