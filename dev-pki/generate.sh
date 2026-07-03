@@ -23,6 +23,8 @@ done
 for tool in openssl keytool curl; do
   command -v "$tool" >/dev/null 2>&1 || { echo "ERROR: '$tool' not found on PATH" >&2; exit 1; }
 done
+# Exclude -sources.jar siblings: Maven installs both, and sort -V | tail -1 would
+# otherwise pick the sources-only jar (no .class files for the FIPS provider).
 BCFIPS_JAR=$(ls "$HOME"/.m2/repository/org/bouncycastle/bc-fips/*/bc-fips-*.jar 2>/dev/null | grep -v -- '-sources\.jar$' | sort -V | tail -1 || true)
 [ -n "$BCFIPS_JAR" ] || { echo "ERROR: bc-fips jar not in ~/.m2 — run 'mvn dependency:resolve' in eidasremotesigning" >&2; exit 1; }
 
