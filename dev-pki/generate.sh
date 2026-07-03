@@ -23,7 +23,7 @@ done
 for tool in openssl keytool curl; do
   command -v "$tool" >/dev/null 2>&1 || { echo "ERROR: '$tool' not found on PATH" >&2; exit 1; }
 done
-BCFIPS_JAR=$(ls "$HOME"/.m2/repository/org/bouncycastle/bc-fips/*/bc-fips-*.jar 2>/dev/null | sort -V | tail -1 || true)
+BCFIPS_JAR=$(ls "$HOME"/.m2/repository/org/bouncycastle/bc-fips/*/bc-fips-*.jar 2>/dev/null | grep -v -- '-sources\.jar$' | sort -V | tail -1 || true)
 [ -n "$BCFIPS_JAR" ] || { echo "ERROR: bc-fips jar not in ~/.m2 — run 'mvn dependency:resolve' in eidasremotesigning" >&2; exit 1; }
 
 if [ -d out ]; then
@@ -82,5 +82,54 @@ openssl x509 -in out/ca/issuing/issuing.crt -outform DER -out out/www/certs/issu
 cat out/signer/signer.crt out/ca/issuing/issuing.crt out/ca/root/root.crt > out/signer/chain.pem
 cat out/ca/issuing/issuing.crt out/ca/root/root.crt > out/signer/ca-chain.pem
 
-# EXPORTS-PLACEHOLDER: Task 4 appends signer.p12 + trust stores + summary here.
-echo "PKI generated under $PKI_OUT"
+echo "== Signer PKCS12 (key + full chain)"
+openssl pkcs12 -export -name etax-dev-signer \
+  -inkey out/signer/signer.key -in out/signer/signer.crt \
+  -certfile out/signer/ca-chain.pem \
+  -passout "pass:$SIGNER_PASSWORD" -out out/signer/signer.p12
+
+echo "== DSS trust stores (PKCS12 + BCFKS)"
+# BCFKS is the canonical target for app.dss.trust-store.path: the BCFIPS
+# provider does not implement the standard PKCS12 keystore type, so under a
+# FIPS-strict JVM a PKCS12 trust store may fail to load in the service.
+import_trusted() { # $1 = alias, $2 = cert file (PEM or DER)
+  keytool -importcert -noprompt -alias "$1" -file "$2" \
+    -keystore out/truststore/dss-truststore.p12 -storetype PKCS12 \
+    -storepass "$TRUSTSTORE_PASSWORD"
+  keytool -importcert -noprompt -alias "$1" -file "$2" \
+    -keystore out/truststore/dss-truststore.bcfks -storetype BCFKS \
+    -providerclass org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider \
+    -providerpath "$BCFIPS_JAR" \
+    -storepass "$TRUSTSTORE_PASSWORD"
+}
+import_trusted etax-dev-root    out/ca/root/root.crt
+import_trusted etax-dev-issuing out/ca/issuing/issuing.crt
+
+if [ "$INCLUDE_FREETSA" -eq 1 ]; then
+  echo "== freetsa.org CA (needed to VALIDATE LTA; signing works without it)"
+  curl -fsS https://freetsa.org/files/cacert.pem -o out/truststore/freetsa-ca.pem
+  openssl x509 -noout -subject -in out/truststore/freetsa-ca.pem
+  import_trusted freetsa-ca out/truststore/freetsa-ca.pem
+fi
+
+cat <<SUMMARY
+
+============================================================
+ dev PKI ready — $PKI_OUT
+============================================================
+ Signer PKCS12 : out/signer/signer.p12   (alias etax-dev-signer)
+                 password: $SIGNER_PASSWORD
+ Trust stores  : out/truststore/dss-truststore.bcfks  <- point app.dss.trust-store.path here
+                 out/truststore/dss-truststore.p12    (inspection/non-FIPS tools)
+                 password: $TRUSTSTORE_PASSWORD
+ CA chain      : out/signer/chain.pem / ca-chain.pem
+ Revoked cert  : out/signer/signer-revoked.crt (negative-test fixture)
+
+ Next steps:
+   1. docker compose up -d          # serve CRL/AIA/OCSP (ports 8880-8882)
+   2. ./verify.sh                   # PKI acceptance test
+   3. ./provision-softhsm.sh        # PKCS#11 backend, or:
+      ./register-bcfks.sh <clientId>  # BCFKS backend
+ If regenerated with --force: re-run step 3 registrations.
+============================================================
+SUMMARY
