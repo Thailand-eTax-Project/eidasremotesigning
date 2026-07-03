@@ -1,0 +1,44 @@
+# Dev PKI serving stack. Certificates bake in localhost:8880-8882 — these
+# ports are contract; changing them requires regenerating the PKI.
+# OCSP responses are signed with the CA keys themselves (dev-only shortcut).
+services:
+  pki-web:
+    image: nginx:alpine
+    ports:
+      - "8880:80"
+    volumes:
+      - ./out/www:/usr/share/nginx/html:ro
+    restart: unless-stopped
+
+  # NOTE: 'alpine/openssl' sets entrypoint=[openssl], so openssl runs as PID 1
+  # in the container. openssl ocsp -multi forks a worker and calls setsid()
+  # to detach it from the parent's process group; setsid() fails for PID 1
+  # ("Operation not permitted"), the worker dies, and docker restarts the
+  # container in a tight loop. alpine:3.20 + shell wrapper avoids this by
+  # letting openssl run as a non-PID-1 child of /bin/sh, where setsid() works.
+  # We also drop 'exec' so sh stays PID 1 (wait $! keeps it alive) while
+  # openssl runs as a child PID; otherwise exec keeps openssl as PID 1 and
+  # setsid() still fails.
+  ocsp-root:
+    image: alpine:3.20
+    entrypoint: ["sh", "-c", "apk add --no-cache openssl >/dev/null && openssl \"$@\" & wait $!", "--"]
+    command: >-
+      ocsp -port 8881 -index /ca/index.txt -CA /ca/root.crt
+      -rkey /ca/private/root.key -rsigner /ca/root.crt -nmin 5 -multi 2
+    ports:
+      - "8881:8881"
+    volumes:
+      - ./out/ca/root:/ca:ro
+    restart: unless-stopped
+
+  ocsp-issuing:
+    image: alpine:3.20
+    entrypoint: ["sh", "-c", "apk add --no-cache openssl >/dev/null && openssl \"$@\" & wait $!", "--"]
+    command: >-
+      ocsp -port 8882 -index /ca/index.txt -CA /ca/issuing.crt
+      -rkey /ca/private/issuing.key -rsigner /ca/issuing.crt -nmin 5 -multi 2
+    ports:
+      - "8882:8882"
+    volumes:
+      - ./out/ca/issuing:/ca:ro
+    restart: unless-stopped
