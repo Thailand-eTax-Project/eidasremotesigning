@@ -1,0 +1,45 @@
+# eTax Dev Issuing CA — OpenSSL config
+# All paths derive from $PKI_OUT (exported by the calling script).
+
+[ req ]
+default_md         = sha256
+distinguished_name = req_dn
+
+[ req_dn ]
+# subject is always passed via -subj
+
+[ ca ]
+default_ca = ca_issuing
+
+[ ca_issuing ]
+dir              = $ENV::PKI_OUT/ca/issuing
+private_key      = $dir/private/issuing.key
+certificate      = $dir/issuing.crt
+database         = $dir/index.txt
+serial           = $dir/serial
+crlnumber        = $dir/crlnumber
+new_certs_dir    = $dir/newcerts
+default_md       = sha256
+default_crl_days = 30
+policy           = policy_loose
+email_in_dn      = no
+unique_subject   = no
+copy_extensions  = none
+crl_extensions   = crl_ext
+
+[ policy_loose ]
+commonName             = supplied
+organizationName       = optional
+organizationalUnitName = optional
+countryName            = optional
+
+[ v3_signer ]
+basicConstraints       = critical, CA:false
+keyUsage               = critical, digitalSignature, nonRepudiation
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid:always
+crlDistributionPoints  = URI:http://localhost:8880/crl/issuing.crl
+authorityInfoAccess    = OCSP;URI:http://localhost:8882, caIssuers;URI:http://localhost:8880/certs/issuing.crt
+
+[ crl_ext ]
+authorityKeyIdentifier = keyid:always

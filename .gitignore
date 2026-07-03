@@ -38,3 +38,6 @@ build/
 docs/superpowers/
 docs/plans
 docs/specs
+
+# dev PKI generated material (keys, certs, CRLs) — regenerate via dev-pki/generate.sh
+dev-pki/out/
