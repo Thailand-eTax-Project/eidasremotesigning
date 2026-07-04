@@ -10,21 +10,21 @@ services:
       - ./out/www:/usr/share/nginx/html:ro
     restart: unless-stopped
 
-  # NOTE: 'alpine/openssl' sets entrypoint=[openssl], so openssl runs as PID 1
-  # in the container. openssl ocsp -multi forks a worker and calls setsid()
-  # to detach it from the parent's process group; setsid() fails for PID 1
-  # ("Operation not permitted"), the worker dies, and docker restarts the
-  # container in a tight loop. alpine:3.20 + shell wrapper avoids this by
-  # letting openssl run as a non-PID-1 child of /bin/sh, where setsid() works.
-  # We also drop 'exec' so sh stays PID 1 (wait $! keeps it alive) while
-  # openssl runs as a child PID; otherwise exec keeps openssl as PID 1 and
-  # setsid() still fails.
+  # NOTE: no '-multi': its worker busy-loops under this PID-namespace setup
+  # (measured ~100% CPU per responder, sustained while idle; 0% without it).
+  # Single-process mode blocks in accept() and is fine for a dev responder —
+  # DSS falls back to CRL if it's ever busy. Dropping -multi also removes the
+  # setsid()-fails-for-PID-1 problem the previous sh-wrapper worked around.
+  # 'init: true' puts tini at PID 1 so SIGTERM reaches openssl (otherwise
+  # 'docker compose stop/restart' waits out the 10s SIGKILL timeout).
+  # 'apk add' runs on every container start: first 'up' needs network access.
   ocsp-root:
     image: alpine:3.20
-    entrypoint: ["sh", "-c", "apk add --no-cache openssl >/dev/null && openssl \"$@\" & wait $!", "--"]
+    init: true
+    entrypoint: ["sh", "-c", "apk add --no-cache openssl >/dev/null && exec openssl \"$@\"", "--"]
     command: >-
       ocsp -port 8881 -index /ca/index.txt -CA /ca/root.crt
-      -rkey /ca/private/root.key -rsigner /ca/root.crt -nmin 5 -multi 2
+      -rkey /ca/private/root.key -rsigner /ca/root.crt -nmin 5
     ports:
       - "8881:8881"
     volumes:
@@ -33,10 +33,11 @@ services:
 
   ocsp-issuing:
     image: alpine:3.20
-    entrypoint: ["sh", "-c", "apk add --no-cache openssl >/dev/null && openssl \"$@\" & wait $!", "--"]
+    init: true
+    entrypoint: ["sh", "-c", "apk add --no-cache openssl >/dev/null && exec openssl \"$@\"", "--"]
     command: >-
       ocsp -port 8882 -index /ca/index.txt -CA /ca/issuing.crt
-      -rkey /ca/private/issuing.key -rsigner /ca/issuing.crt -nmin 5 -multi 2
+      -rkey /ca/private/issuing.key -rsigner /ca/issuing.crt -nmin 5
     ports:
       - "8882:8882"
     volumes:
