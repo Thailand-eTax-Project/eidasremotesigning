@@ -15,6 +15,14 @@ done
 [ -f "$MODULE" ] || { echo "ERROR: PKCS#11 module not found at $MODULE (set PKCS11_MODULE)" >&2; exit 1; }
 [ -f out/signer/signer.key ] || { echo "ERROR: PKI not generated — run ./generate.sh first" >&2; exit 1; }
 
+# --init-token --free on a re-run would create a SECOND token with the same
+# label, making every later --token-label lookup ambiguous.
+if softhsm2-util --show-slots 2>/dev/null | grep -qE "^[[:space:]]*Label:[[:space:]]*$TOKEN_LABEL[[:space:]]*$"; then
+  echo "ERROR: SoftHSM token '$TOKEN_LABEL' already exists." >&2
+  echo "Delete it first: softhsm2-util --delete-token --token '$TOKEN_LABEL'" >&2
+  exit 1
+fi
+
 softhsm2-util --init-token --free --label "$TOKEN_LABEL" --pin "$PIN" --so-pin "$SO_PIN"
 
 openssl pkcs8 -topk8 -nocrypt -in out/signer/signer.key -outform DER -out out/signer/signer.pk8.der

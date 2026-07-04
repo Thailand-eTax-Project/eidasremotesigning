@@ -8,6 +8,10 @@ cd "$(dirname "$0")"
 
 CLIENT_ID="${1:-}"
 [ -n "$CLIENT_ID" ] || { echo "Usage: ./register-bcfks.sh <clientId> [keystore-dir]" >&2; exit 2; }
+# clientId is interpolated into the emitted SQL — reject anything that could
+# break out of the string literal.
+[[ "$CLIENT_ID" =~ ^[A-Za-z0-9._-]+$ ]] \
+  || { echo "ERROR: clientId must match ^[A-Za-z0-9._-]+\$" >&2; exit 2; }
 KEYSTORE_DIR="${2:-${KEYSTORE_PATH:-/app/keystores}}"
 SIGNER_PASSWORD="${DEV_PKI_SIGNER_PASSWORD:-etax-dev-signer-pw}"
 # BCFKSService rejects passwords < 14 chars at KEY LOAD time (sign time, not
@@ -30,8 +34,12 @@ keytool -importkeystore \
   -providerclass org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider \
   -providerpath "$BCFIPS_JAR"
 
+# Linux idioms ('base64 -w0', /proc uuid fallback above); on macOS use
+# 'base64' (no wrap flag needed) and uuidgen.
 CERT_B64=$(openssl x509 -in out/signer/signer.crt -outform DER | base64 -w0)
-NOW=$(date -u +"%Y-%m-%d %H:%M:%S")
+# Local wall clock, not -u: created_at is TIMESTAMP (no tz) and Hibernate reads
+# it back in the JVM's default zone — UTC here would display hours off.
+NOW=$(date +"%Y-%m-%d %H:%M:%S")
 
 cat <<EOF
 

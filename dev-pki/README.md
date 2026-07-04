@@ -44,3 +44,7 @@ Key outputs (see generate.sh summary for passwords):
 - OCSP responses are signed with the CA keys (dev-only shortcut); the CA keys are
   bind-mounted read-only into the responder containers. Never reuse this pattern
   outside a throwaway dev PKI.
+- The OCSP containers `apk add openssl` on every start, so `docker compose up`
+  needs network access (the stack is otherwise fully local).
+- Using podman? Same as the repo's Testcontainers convention:
+  `export DOCKER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"`.
