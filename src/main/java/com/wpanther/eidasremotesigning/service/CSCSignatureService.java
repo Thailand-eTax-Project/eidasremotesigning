@@ -6,6 +6,7 @@ import com.wpanther.eidasremotesigning.entity.AsyncOperation;
 import com.wpanther.eidasremotesigning.entity.SigningCertificate;
 import com.wpanther.eidasremotesigning.entity.SigningLog;
 import com.wpanther.eidasremotesigning.entity.TransactionAuthorization;
+import com.wpanther.eidasremotesigning.exception.CSCInvalidRequestException;
 import com.wpanther.eidasremotesigning.exception.CSCUnsupportedOperationException;
 import com.wpanther.eidasremotesigning.exception.SigningException;
 import com.wpanther.eidasremotesigning.exception.SigningInProgressException;
@@ -708,6 +709,38 @@ public class CSCSignatureService {
         System.arraycopy(prefix, 0, out, 0, prefix.length);
         System.arraycopy(digest, 0, out, prefix.length, digest.length);
         return out;
+    }
+
+    enum ConformanceLevel { B, T, LT, LTA }
+
+    /**
+     * Maps a CSC v2.0 conformance_level wire value to the internal level.
+     * null/blank -> B (default). Accepted (case-insensitive, trimmed):
+     * Ades-B-B/Ades-B -> B; Ades-B-T/Ades-T -> T; Ades-B-LT/Ades-LT -> LT;
+     * Ades-B-LTA/Ades-LTA -> LTA. Anything else -> CSCInvalidRequestException.
+     */
+    static ConformanceLevel mapConformanceLevel(String conformanceLevel) {
+        if (conformanceLevel == null || conformanceLevel.isBlank()) {
+            return ConformanceLevel.B;
+        }
+        switch (conformanceLevel.trim().toUpperCase()) {
+            case "ADES-B-B":
+            case "ADES-B":
+                return ConformanceLevel.B;
+            case "ADES-B-T":
+            case "ADES-T":
+                return ConformanceLevel.T;
+            case "ADES-B-LT":
+            case "ADES-LT":
+                return ConformanceLevel.LT;
+            case "ADES-B-LTA":
+            case "ADES-LTA":
+                return ConformanceLevel.LTA;
+            default:
+                throw new CSCInvalidRequestException(
+                        "Unsupported conformance_level: " + conformanceLevel
+                                + " (supported: Ades-B-B, Ades-B-T, Ades-B-LT, Ades-B-LTA)");
+        }
     }
 
     /**

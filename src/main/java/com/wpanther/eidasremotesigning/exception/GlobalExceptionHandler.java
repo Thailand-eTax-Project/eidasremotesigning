@@ -62,6 +62,16 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(CSCInvalidRequestException.class)
+    public ResponseEntity<CSCErrorResponse> handleCSCInvalidRequest(CSCInvalidRequestException ex) {
+        log.error("Invalid CSC request", ex);
+        CSCErrorResponse errorResponse = CSCErrorResponse.builder()
+                .error(CSCConstants.ERROR_INVALID_REQUEST)
+                .errorDescription(ex.getMessage())
+                .build();
+        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(SigningInProgressException.class)
     public ResponseEntity<CSCErrorResponse> handleSigningInProgress(SigningInProgressException ex) {
         log.debug("Signing in progress: requestID={}", ex.getRequestID());

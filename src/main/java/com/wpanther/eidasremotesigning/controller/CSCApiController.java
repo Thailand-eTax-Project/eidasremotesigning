@@ -76,7 +76,7 @@ public class CSCApiController {
                                 List.of("Enveloped", "Enveloping", "Detached")
                         ))
                         .build())
-                .conformance_levels(List.of("Ades-B-B"))
+                .conformance_levels(List.of("Ades-B-B", "Ades-B-T", "Ades-B-LT", "Ades-B-LTA"))
                 .oauth2(cscBaseUrl)
                 .asynchronousOperationMode(true)
                 .build();

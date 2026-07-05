@@ -39,4 +39,19 @@ class GlobalExceptionHandlerTest {
                 .as("error_description must carry the thrower-provided message")
                 .isEqualTo("test message");
     }
+
+    @Test
+    void cscInvalidRequestException_returns400InvalidRequestShape() {
+        CSCInvalidRequestException ex = new CSCInvalidRequestException("bad level");
+
+        ResponseEntity<CSCErrorResponse> response = handler.handleCSCInvalidRequest(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getError())
+                .as("error must equal CSCConstants.ERROR_INVALID_REQUEST spec string")
+                .isEqualTo(CSCConstants.ERROR_INVALID_REQUEST)
+                .isEqualTo("invalid_request");
+        assertThat(response.getBody().getErrorDescription()).isEqualTo("bad level");
+    }
 }
