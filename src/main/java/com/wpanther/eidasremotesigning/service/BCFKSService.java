@@ -16,11 +16,11 @@ import java.util.UUID;
 
 @Slf4j
 @Service
-@DependsOn("bouncyCastleFipsProvider")
+@DependsOn("bouncyCastleProvider")
 public class BCFKSService {
 
     static final String KEYSTORE_TYPE = "BCFKS";
-    static final String PROVIDER = "BCFIPS";
+    static final String PROVIDER = "BC";
     static final String FILE_EXTENSION = ".bfks";
     static final int MIN_PASSWORD_LENGTH = 14;
 
@@ -67,7 +67,7 @@ public class BCFKSService {
     }
 
     /**
-     * Signs data using the BCFIPS provider.
+     * Signs data using the BC (BouncyCastle) provider.
      */
     public byte[] sign(byte[] data, PrivateKey privateKey,
                        String signatureAlgorithm) throws Exception {

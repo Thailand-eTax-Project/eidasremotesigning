@@ -462,8 +462,8 @@ public class CSCSignatureService {
             if ("PKCS11".equals(certEntity.getStorageType())) {
                 signature = Signature.getInstance(signatureAlgorithm, certEntity.getProviderName());
             } else {
-                // BCFKS: use BCFIPS provider for FIPS-compliant signing
-                signature = Signature.getInstance(signatureAlgorithm, "BCFIPS");
+                // BCFKS: use the BC (BouncyCastle) provider
+                signature = Signature.getInstance(signatureAlgorithm, "BC");
             }
             signature.initSign(privateKey);
             signature.update(data);

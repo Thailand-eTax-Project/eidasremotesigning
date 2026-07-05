@@ -9,7 +9,7 @@ import com.wpanther.eidasremotesigning.repository.SigningCertificateRepository;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
-import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.BeforeAll;
@@ -58,8 +58,8 @@ class CSCApiServiceTest {
 
     @BeforeAll
     static void setupProvider() {
-        if (Security.getProvider("BCFIPS") == null) {
-            Security.insertProviderAt(new BouncyCastleFipsProvider(), 2);
+        if (Security.getProvider("BC") == null) {
+            Security.addProvider(new BouncyCastleProvider());
         }
     }
 
@@ -305,10 +305,10 @@ class CSCApiServiceTest {
     }
 
     /**
-     * Generates a self-signed X.509Certificate with the given notAfter date using BCFIPS.
+     * Generates a self-signed X.509Certificate with the given notAfter date using BC.
      */
     private X509Certificate generateSelfSignedCert(Instant notAfter) throws Exception {
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA", "BCFIPS");
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA", "BC");
         kpg.initialize(2048);
         KeyPair kp = kpg.generateKeyPair();
 
@@ -320,11 +320,11 @@ class CSCApiServiceTest {
                 name, serial, Date.from(notBefore), Date.from(notAfter), name, kp.getPublic());
 
         ContentSigner signer = new JcaContentSignerBuilder("SHA256withRSA")
-                .setProvider("BCFIPS")
+                .setProvider("BC")
                 .build(kp.getPrivate());
 
         return new JcaX509CertificateConverter()
-                .setProvider("BCFIPS")
+                .setProvider("BC")
                 .getCertificate(builder.build(signer));
     }
 }

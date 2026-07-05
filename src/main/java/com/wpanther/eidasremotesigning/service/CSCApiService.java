@@ -403,7 +403,7 @@ public class CSCApiService {
     private byte[] signPreComputedDigest(byte[] digest, String hashAlgo, String keyAlgo,
             PrivateKey privateKey, SigningCertificate certEntity) throws Exception {
         String provider = "PKCS11".equals(certEntity.getStorageType())
-                ? certEntity.getProviderName() : "BCFIPS";
+                ? certEntity.getProviderName() : "BC";
         String key = keyAlgo == null ? "" : keyAlgo.toUpperCase();
         byte[] toSign;
         String rawAlgo;

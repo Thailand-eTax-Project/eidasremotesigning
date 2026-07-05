@@ -3,7 +3,7 @@ package com.wpanther.eidasremotesigning.service;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
-import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.BeforeAll;
@@ -35,8 +35,8 @@ class BCFKSServiceTest {
 
     @BeforeAll
     static void setupProvider() throws Exception {
-        if (Security.getProvider("BCFIPS") == null) {
-            Security.insertProviderAt(new BouncyCastleFipsProvider(), 2);
+        if (Security.getProvider("BC") == null) {
+            Security.addProvider(new BouncyCastleProvider());
         }
         testKeyPair = generateRSAKeyPair();
         testCertificate = generateSelfSignedCert(testKeyPair);
@@ -107,13 +107,13 @@ class BCFKSServiceTest {
 
     @Test
     void sign_producesVerifiableSignature() throws Exception {
-        byte[] data = "Hello BCFIPS".getBytes();
+        byte[] data = "Hello BC".getBytes();
         String path = service.createKeystore(TEST_ALIAS, testKeyPair.getPrivate(), testCertificate, TEST_PASSWORD);
         PrivateKey key = service.getPrivateKey(path, TEST_ALIAS, TEST_PASSWORD);
 
         byte[] signature = service.sign(data, key, "SHA256withRSA");
 
-        Signature verifier = Signature.getInstance("SHA256withRSA", "BCFIPS");
+        Signature verifier = Signature.getInstance("SHA256withRSA", "BC");
         verifier.initVerify(testCertificate.getPublicKey());
         verifier.update(data);
         assertThat(verifier.verify(signature)).isTrue();
@@ -158,7 +158,7 @@ class BCFKSServiceTest {
     // --- helpers ---
 
     static KeyPair generateRSAKeyPair() throws Exception {
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA", "BCFIPS");
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA", "BC");
         kpg.initialize(2048);
         return kpg.generateKeyPair();
     }
@@ -172,11 +172,11 @@ class BCFKSServiceTest {
                 subject, BigInteger.ONE, notBefore, notAfter, subject, keyPair.getPublic());
 
         ContentSigner signer = new JcaContentSignerBuilder("SHA256withRSA")
-                .setProvider("BCFIPS")
+                .setProvider("BC")
                 .build(keyPair.getPrivate());
 
         return new JcaX509CertificateConverter()
-                .setProvider("BCFIPS")
+                .setProvider("BC")
                 .getCertificate(builder.build(signer));
     }
 }

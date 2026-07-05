@@ -9,7 +9,7 @@ import com.wpanther.eidasremotesigning.util.DocumentFormatUtil;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
-import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.BeforeAll;
@@ -81,8 +81,8 @@ class CSCSignatureServiceValidateSignatureTest {
 
     @BeforeAll
     static void setupProvider() {
-        if (Security.getProvider("BCFIPS") == null) {
-            Security.insertProviderAt(new BouncyCastleFipsProvider(), 2);
+        if (Security.getProvider("BC") == null) {
+            Security.addProvider(new BouncyCastleProvider());
         }
     }
 
@@ -217,7 +217,7 @@ class CSCSignatureServiceValidateSignatureTest {
 
     private byte[] rawRsaSignDigestInfo(byte[] digest, String jcaHashAlgo) throws Exception {
         byte[] digestInfo = rsaDigestInfo(jcaHashAlgo, digest);
-        Signature sig = Signature.getInstance("NONEwithRSA", "BCFIPS");
+        Signature sig = Signature.getInstance("NONEwithRSA", "BC");
         sig.initSign(signingKeyPair().getPrivate());
         sig.update(digestInfo);
         return sig.sign();
@@ -244,7 +244,7 @@ class CSCSignatureServiceValidateSignatureTest {
     }
 
     private KeyPair generateRsaKeyPair() throws Exception {
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA", "BCFIPS");
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA", "BC");
         kpg.initialize(2048);
         return kpg.generateKeyPair();
     }
@@ -258,11 +258,11 @@ class CSCSignatureServiceValidateSignatureTest {
                 name, serial, Date.from(notBefore), Date.from(notAfter), name, kp.getPublic());
 
         ContentSigner signer = new JcaContentSignerBuilder("SHA256withRSA")
-                .setProvider("BCFIPS")
+                .setProvider("BC")
                 .build(kp.getPrivate());
 
         return new JcaX509CertificateConverter()
-                .setProvider("BCFIPS")
+                .setProvider("BC")
                 .getCertificate(builder.build(signer));
     }
 
