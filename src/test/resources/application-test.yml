@@ -34,3 +34,12 @@ app:
     base-path: ${java.io.tmpdir}/test-keystores
   pkcs11:
     enabled: false
+  # DSS trust store — required for SignDocLtltaIT (LT/LTA needs the dev-PKI root CA
+  # trusted so DSS will chase revocation via AIA). The default path+password match
+  # dev-pki/generate.sh outputs (DEV_PKI_TRUSTSTORE_PASSWORD defaults to "changeit").
+  # B/T tests are unaffected — they don't exercise chain validation.
+  dss:
+    truststore:
+      path: ${DSS_TRUSTSTORE_PATH:dev-pki/out/truststore/dss-truststore.bcfks}
+      type: BCFKS
+      password: ${DSS_TRUSTSTORE_PASSWORD:changeit}

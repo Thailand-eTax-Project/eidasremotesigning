@@ -415,6 +415,12 @@ public class CSCSignatureService {
      * wraps the result plus any required timestamps/validation material. The level
      * parameter selects the DSS {@link SignatureLevel} (B / T / LT / LTA). The chain
      * parameter is required for LT/LTA so DSS can embed the validation material.
+     *
+     * <p>For {@code PAdES_BASELINE_LTA} the {@code signDocument} call only produces an
+     * {@code PAdES_BASELINE_LT} signature (cert refs + revocation + signature timestamp);
+     * the archive timestamp is added by a separate {@code extendDocument} call. (XAdES
+     * does this inline; PAdES does not.) Without the extension the signature reports
+     * as {@code PAdES_BASELINE_LT} even when the caller requested LTA.
      */
     private String signDocumentWithPAdES(byte[] documentBytes, X509Certificate certificate,
             SigningCertificate certEntity, PrivateKey privateKey, String hashAlgo,
@@ -442,6 +448,11 @@ public class CSCSignatureService {
                 dssSignatureBytes);
 
         DSSDocument signedDoc = padesService.signDocument(documentToSign, params, signatureValue);
+
+        // LTA extension: archive timestamp on top of the LT material.
+        if (level == ConformanceLevel.LTA) {
+            signedDoc = padesService.extendDocument(signedDoc, params);
+        }
 
         return Base64.getEncoder().encodeToString(toByteArray(signedDoc));
     }

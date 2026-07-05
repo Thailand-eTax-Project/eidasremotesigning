@@ -9,6 +9,19 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
 /**
+ * Important: when this test verifier is the {@code @Primary} bean (overriding
+ * the production {@code DSSConfig#certificateVerifier()}), CSCSignatureService
+ * and the DSS validation APIs all receive THIS verifier, not the production
+ * one. So we must propagate the production verifier's revocation sources
+ * (CRL source) here — otherwise LT/LTA signing fails at DSS-level validation
+ * material fetch with
+ *   "Revocation data is missing for one or more certificate(s)"
+ * because the test verifier starts with no revocation source configured.
+ * Copying the trusted cert sources alone is not enough; without a CRL source
+ * DSS cannot honour CRL Distribution Point AIA even when the URL is reachable.
+ */
+
+/**
  * Test-only DSS beans: a deterministic {@link TestTSPSource} and a verifier that
  * trusts its TSA certificate, so LT/LTA validation passes without network.
  *
@@ -42,6 +55,15 @@ public class DssTestConfig {
                                                              TestTSPSource testTspSource) {
         CommonCertificateVerifier v = new CommonCertificateVerifier();
         v.setTrustedCertSources(prodVerifier.getTrustedCertSources());
+
+        // Propagate the production verifier's revocation sources (CRL/OCSP).
+        // Without this, the test verifier starts with no revocation fetcher and
+        // DSS reports "Revocation data is missing for one or more certificate(s)"
+        // for LT/LTA — even though the production CRL/OCSP endpoints work fine.
+        // The Trust Store + trusted TSA cert alone are not enough; LT/LTA chain
+        // validation requires a revocation source.
+        v.setCrlSource(prodVerifier.getCrlSource());
+        v.setOcspSource(prodVerifier.getOcspSource());
 
         // Add the mock TSA cert as a TRUSTED_LIST source so timestamps it mints
         // validate. CommonCertificateSource is type OTHER and DSS rejects it in

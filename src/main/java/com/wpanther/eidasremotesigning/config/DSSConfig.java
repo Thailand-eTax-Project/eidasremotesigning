@@ -1,6 +1,9 @@
 package com.wpanther.eidasremotesigning.config;
 
+import eu.europa.esig.dss.service.crl.OnlineCRLSource;
+import eu.europa.esig.dss.service.http.commons.CommonsDataLoader;
 import eu.europa.esig.dss.service.tsp.OnlineTSPSource;
+import eu.europa.esig.dss.spi.x509.CommonTrustedCertificateSource;
 import eu.europa.esig.dss.spi.x509.KeyStoreCertificateSource;
 import eu.europa.esig.dss.spi.x509.tsp.TSPSource;
 import eu.europa.esig.dss.validation.CommonCertificateVerifier;
@@ -45,9 +48,19 @@ public class DSSConfig {
         if (truststorePath != null && !truststorePath.isBlank()
                 && new File(truststorePath).isFile()) {
             try {
-                verifier.setTrustedCertSources(
-                        new KeyStoreCertificateSource(truststorePath, truststoreType, truststorePassword));
-                log.info("DSS trust store loaded from {} ({})", truststorePath, truststoreType);
+                // DSS rejects CertificateSource instances of type OTHER in
+                // setTrustedCertSources (it only accepts TRUSTED_STORE /
+                // TRUSTED_LIST). KeyStoreCertificateSource's declared type is
+                // OTHER, so wrap its entries in a CommonTrustedCertificateSource
+                // via importAsTrusted() before handing it to the verifier. This
+                // is the same pattern DssTestConfig uses for the TestTSA cert.
+                CommonTrustedCertificateSource trusted = new CommonTrustedCertificateSource();
+                KeyStoreCertificateSource keystoreSource = new KeyStoreCertificateSource(
+                        truststorePath, truststoreType, truststorePassword);
+                trusted.importAsTrusted(keystoreSource);
+                verifier.addTrustedCertSources(trusted);
+                log.info("DSS trust store loaded from {} ({} entries, type {})",
+                        truststorePath, trusted.getCertificates().size(), truststoreType);
             } catch (Exception e) {
                 log.warn("Could not load DSS trust store from {}: {}", truststorePath, e.getMessage());
             }
@@ -55,6 +68,22 @@ public class DSSConfig {
             log.warn("app.dss.truststore.path not set or missing; verifier has no explicit trusted "
                     + "source (B/T still work; LT/LTA embed validation material via AIA)");
         }
+
+        // Always wire an explicit OnlineCRLSource so DSS fetches CRLs from the
+        // cert's CRL Distribution Point via the standard CommonsDataLoader
+        // (works against HTTP/1.1 responders — the local dev-PKI nginx serves
+        // CRLs correctly). Without an explicit CRL source DSS relies on the
+        // bundled default AIA source, which mixes AIA-OCSP + AIA-CRL fetches
+        // and silently drops revocation data when the OCSP responder (e.g.
+        // OpenSSL `ocsp` server) doesn't return a complete response body.
+        // For LT/LTA validation this surfaces as the
+        //   "Revocation data is missing for one or more certificate(s)"
+        // error in CSCSignatureService. Explicit CRL source + the trust-store
+        // chain pinning above is the documented DSS pattern for that case.
+        OnlineCRLSource crlSource = new OnlineCRLSource(new CommonsDataLoader());
+        verifier.setCrlSource(crlSource);
+        log.info("DSS OnlineCRLSource wired (AIA-CRL fetch via CommonsDataLoader)");
+
         return verifier;
     }
 
