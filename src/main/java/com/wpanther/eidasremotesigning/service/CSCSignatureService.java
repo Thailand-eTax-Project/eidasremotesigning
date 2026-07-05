@@ -28,8 +28,8 @@ import eu.europa.esig.dss.model.ToBeSigned;
 import eu.europa.esig.dss.model.x509.CertificateToken;
 import eu.europa.esig.dss.pades.PAdESSignatureParameters;
 import eu.europa.esig.dss.pades.signature.PAdESService;
-import eu.europa.esig.dss.service.tsp.OnlineTSPSource;
-import eu.europa.esig.dss.validation.CommonCertificateVerifier;
+import eu.europa.esig.dss.spi.x509.tsp.TSPSource;
+import eu.europa.esig.dss.validation.CertificateVerifier;
 import eu.europa.esig.dss.xades.XAdESSignatureParameters;
 import eu.europa.esig.dss.xades.signature.XAdESService;
 import lombok.RequiredArgsConstructor;
@@ -82,7 +82,9 @@ public class CSCSignatureService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private AWSKMSService awskmsService;
 
-    private String tspUrl;
+    private final CertificateVerifier certificateVerifier;
+
+    private final TSPSource tspSource;
 
     private int operationExpiryMinutes;
 
@@ -104,7 +106,8 @@ public class CSCSignatureService {
                                  DocumentFormatUtil documentFormatUtil,
                                  @Qualifier("asyncSigningExecutor") Executor asyncExecutor,
                                  @org.springframework.beans.factory.annotation.Autowired(required = false) AWSKMSService awskmsService,
-                                 @Value("${app.tsp.url:http://tsa.belgium.be/connect}") String tspUrl,
+                                 CertificateVerifier certificateVerifier,
+                                 TSPSource tspSource,
                                  @Value("${app.async.operation-expiry-minutes:30}") int operationExpiryMinutes) {
         this.certificateRepository = certificateRepository;
         this.certificateService = certificateService;
@@ -117,7 +120,8 @@ public class CSCSignatureService {
         this.documentFormatUtil = documentFormatUtil;
         this.asyncExecutor = asyncExecutor;
         this.awskmsService = awskmsService;
-        this.tspUrl = tspUrl;
+        this.certificateVerifier = certificateVerifier;
+        this.tspSource = tspSource;
         this.operationExpiryMinutes = operationExpiryMinutes;
     }
     
@@ -257,6 +261,16 @@ public class CSCSignatureService {
                     String signAlgoOid = entry.getSignAlgo();
                     String jcaSigAlgo = OIDMapper.toJcaSigAlgo(signAlgoOid);
 
+                    // documentDigests[] returns raw signatures; only Baseline-B applies.
+                    // Anything stricter is a misuse (documentDigests do not produce
+                    // an AdES container) -> 400 invalid_request.
+                    ConformanceLevel digestLevel = mapConformanceLevel(entry.getConformance_level());
+                    if (digestLevel != ConformanceLevel.B) {
+                        throw new CSCInvalidRequestException(
+                                "conformance_level " + entry.getConformance_level()
+                                        + " is not supported for documentDigests (raw signature path)");
+                    }
+
                     // Determine signature type from the CSC wire value (P/X/PADES/XADES).
                     DigestSigningRequest.SignatureType signatureType = mapSignatureFormat(entry.getSignature_format());
 
@@ -299,6 +313,19 @@ public class CSCSignatureService {
                     String signAlgoOid = entry.getSignAlgo();
                     String jcaSigAlgo = OIDMapper.toJcaSigAlgo(signAlgoOid);
 
+                    // 1) signature_format (may throw CSCUnsupportedOperationException -> 400 unsupported_operation)
+                    DigestSigningRequest.SignatureType signatureType = mapSignatureFormat(signatureFormat);
+
+                    // 2) conformance_level (may throw CSCInvalidRequestException -> 400 invalid_request)
+                    ConformanceLevel conformanceLevel = mapConformanceLevel(entry.getConformance_level());
+
+                    // 3) AWSKMS supports only Baseline-B
+                    if ("AWSKMS".equals(certEntity.getStorageType()) && conformanceLevel != ConformanceLevel.B) {
+                        throw new CSCInvalidRequestException(
+                                "conformance_level " + entry.getConformance_level()
+                                        + " is not supported for AWS KMS credentials");
+                    }
+
                     // Determine hash algorithm from signAlgo
                     String hashAlgo = OIDMapper.toJcaHashAlgoForSig(signAlgoOid);
 
@@ -321,9 +348,12 @@ public class CSCSignatureService {
                     MessageDigest digest = MessageDigest.getInstance(hashAlgo);
                     byte[] digestBytes = digest.digest(documentBytes);
 
-                    // Determine signature type from the CSC wire value (P/X/PADES/XADES).
-                    // Unsupported values (C, J, unknown) throw -> 400 unsupported_operation.
-                    DigestSigningRequest.SignatureType signatureType = mapSignatureFormat(signatureFormat);
+                    // 4) Load the chain (BCFKS/PKCS#11; single EE for AWSKMS-B).
+                    //    Needed before eIDAS validation so downstream signing can embed
+                    //    the chain at LT/LTA. Even though the validation request only
+                    //    takes the EE cert, fetching the chain up-front keeps the order
+                    //    stable and surfaces keystore/chain issues before signDocument.
+                    X509Certificate[] chain = certificateService.getCertificateChain(credentialId, pin);
 
                     // Validate eIDAS compliance
                     DigestSigningRequest validationRequest = DigestSigningRequest.builder()
@@ -338,10 +368,12 @@ public class CSCSignatureService {
                     String signedDocumentBase64;
                     if (DigestSigningRequest.SignatureType.PADES == signatureType) {
                         signedDocumentBase64 = signDocumentWithPAdES(documentBytes, certificate, certEntity,
-                                privateKey, hashAlgo, jcaSigAlgo, keyAlgoForSig);
+                                privateKey, hashAlgo, jcaSigAlgo, keyAlgoForSig,
+                                conformanceLevel, chain);
                     } else {
                         signedDocumentBase64 = signDocumentWithXAdES(documentBytes, certificate, certEntity,
-                                privateKey, hashAlgo, jcaSigAlgo, keyAlgoForSig);
+                                privateKey, hashAlgo, jcaSigAlgo, keyAlgoForSig,
+                                conformanceLevel, chain);
                     }
 
                     signedDocuments.add(signedDocumentBase64);
@@ -375,19 +407,28 @@ public class CSCSignatureService {
     }
 
     /**
-     * Signs a PDF document using EU DSS PAdES
+     * Signs a PDF document using EU DSS PAdES.
+     *
+     * <p>The two-phase DSS contract: {@link PAdESService#getDataToSign(InMemoryDocument,
+     * PAdESSignatureParameters)} returns the {@link ToBeSigned} pre-image; the caller
+     * signs those raw bytes (via {@link #signRawBytes} with {@code isDigest=false}); DSS
+     * wraps the result plus any required timestamps/validation material. The level
+     * parameter selects the DSS {@link SignatureLevel} (B / T / LT / LTA). The chain
+     * parameter is required for LT/LTA so DSS can embed the validation material.
      */
     private String signDocumentWithPAdES(byte[] documentBytes, X509Certificate certificate,
             SigningCertificate certEntity, PrivateKey privateKey, String hashAlgo,
-            String signatureAlgorithm, String keyAlgoForSig) throws Exception {
+            String signatureAlgorithm, String keyAlgoForSig,
+            ConformanceLevel level, X509Certificate[] chain) throws Exception {
 
         PAdESSignatureParameters params = new PAdESSignatureParameters();
-        params.setSignatureLevel(SignatureLevel.PAdES_BASELINE_B);
+        params.setSignatureLevel(resolvePAdESLevel(level));
         params.setDigestAlgorithm(mapHashAlgorithm(hashAlgo));
         params.setSigningCertificate(new CertificateToken(certificate));
+        params.setCertificateChain(toCertTokens(chain));
 
-        CommonCertificateVerifier verifier = new CommonCertificateVerifier();
-        PAdESService padesService = new PAdESService(verifier);
+        PAdESService padesService = new PAdESService(certificateVerifier);
+        padesService.setTspSource(tspSource);
 
         InMemoryDocument documentToSign = new InMemoryDocument(documentBytes);
         ToBeSigned dataToSign = padesService.getDataToSign(documentToSign, params);
@@ -406,20 +447,24 @@ public class CSCSignatureService {
     }
 
     /**
-     * Signs an XML document using EU DSS XAdES
+     * Signs an XML document using EU DSS XAdES. Same two-phase contract as
+     * {@link #signDocumentWithPAdES}; the level drives the DSS
+     * {@link SignatureLevel}, the chain is embedded for LT/LTA.
      */
     private String signDocumentWithXAdES(byte[] documentBytes, X509Certificate certificate,
             SigningCertificate certEntity, PrivateKey privateKey, String hashAlgo,
-            String signatureAlgorithm, String keyAlgoForSig) throws Exception {
+            String signatureAlgorithm, String keyAlgoForSig,
+            ConformanceLevel level, X509Certificate[] chain) throws Exception {
 
         XAdESSignatureParameters params = new XAdESSignatureParameters();
-        params.setSignatureLevel(SignatureLevel.XAdES_BASELINE_B);
+        params.setSignatureLevel(resolveXAdESLevel(level));
         params.setSignaturePackaging(SignaturePackaging.ENVELOPED);
         params.setDigestAlgorithm(mapHashAlgorithm(hashAlgo));
         params.setSigningCertificate(new CertificateToken(certificate));
+        params.setCertificateChain(toCertTokens(chain));
 
-        CommonCertificateVerifier verifier = new CommonCertificateVerifier();
-        XAdESService xadesService = new XAdESService(verifier);
+        XAdESService xadesService = new XAdESService(certificateVerifier);
+        xadesService.setTspSource(tspSource);
 
         InMemoryDocument documentToSign = new InMemoryDocument(documentBytes);
         ToBeSigned dataToSign = xadesService.getDataToSign(documentToSign, params);
@@ -435,6 +480,51 @@ public class CSCSignatureService {
         DSSDocument signedDoc = xadesService.signDocument(documentToSign, params, signatureValue);
 
         return Base64.getEncoder().encodeToString(toByteArray(signedDoc));
+    }
+
+    /**
+     * Resolves a {@link ConformanceLevel} to its PAdES {@link SignatureLevel} equivalent.
+     * Switch over the small enum keeps this exhaustively checked at compile time.
+     */
+    private static SignatureLevel resolvePAdESLevel(ConformanceLevel level) {
+        switch (level) {
+            case B:   return SignatureLevel.PAdES_BASELINE_B;
+            case T:   return SignatureLevel.PAdES_BASELINE_T;
+            case LT:  return SignatureLevel.PAdES_BASELINE_LT;
+            case LTA: return SignatureLevel.PAdES_BASELINE_LTA;
+            default:  throw new IllegalStateException("Unhandled ConformanceLevel: " + level);
+        }
+    }
+
+    /**
+     * Resolves a {@link ConformanceLevel} to its XAdES {@link SignatureLevel} equivalent.
+     * Switch over the small enum keeps this exhaustively checked at compile time.
+     */
+    private static SignatureLevel resolveXAdESLevel(ConformanceLevel level) {
+        switch (level) {
+            case B:   return SignatureLevel.XAdES_BASELINE_B;
+            case T:   return SignatureLevel.XAdES_BASELINE_T;
+            case LT:  return SignatureLevel.XAdES_BASELINE_LT;
+            case LTA: return SignatureLevel.XAdES_BASELINE_LTA;
+            default:  throw new IllegalStateException("Unhandled ConformanceLevel: " + level);
+        }
+    }
+
+    /**
+     * Converts a {@link X509Certificate} chain to DSS {@link CertificateToken} list,
+     * skipping null entries. Used by the PAdES/XAdES signing methods to attach the chain
+     * to the DSS signature parameters for LT/LTA validation material embedding.
+     */
+    private static List<CertificateToken> toCertTokens(X509Certificate[] chain) {
+        List<CertificateToken> list = new ArrayList<>();
+        if (chain != null) {
+            for (X509Certificate c : chain) {
+                if (c != null) {
+                    list.add(new CertificateToken(c));
+                }
+            }
+        }
+        return list;
     }
 
     /**
@@ -564,14 +654,11 @@ public class CSCSignatureService {
                 throw new SigningException("Either hash or nonce must be provided");
             }
             
-            // Create TSP source
-            OnlineTSPSource tspSource = new OnlineTSPSource(tspUrl);
-            
             // Create a DSS document from the digest
             DigestAlgorithm digestAlgorithm = mapHashAlgorithm(hashAlgo);
             
-            // Get timestamp token using the correct method
-            TimestampBinary timeStampToken = 
+            // Get timestamp token using the correct method (using injected TSPSource)
+            TimestampBinary timeStampToken =
                     tspSource.getTimeStampResponse(digestAlgorithm, digestBytes);
             
             byte[] timestampTokenBytes = timeStampToken.getBytes();

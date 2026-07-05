@@ -106,7 +106,15 @@ public class TestTSPSource implements TSPSource {
             var request = reqGen.generate(bcAlgo, digest, BigInteger.valueOf(System.nanoTime()));
             var response = responseGenerator.generate(request, BigInteger.ONE, new Date());
             response.validate(request);
-            return new TimestampBinary(response.getEncoded());
+
+            // Mirror DSS's OnlineTSPSource (eu.europa.esig.dss.service.tsp.OnlineTSPSource
+            // #getTimeStampResponse): return the CMSSignedData DER-encoded — NOT the outer
+            // TimeStampResp SEQUENCE. The outer SEQUENCE carries BER (DLSequence) artifacts
+            // that DSS then trips on with "illegal object in getInstance:
+            // org.bouncycastle.asn1.DLSequence" when it parses the bytes back to extract the
+            // unsigned attribute during baseline-T extension.
+            org.bouncycastle.tsp.TimeStampToken timeStampToken = response.getTimeStampToken();
+            return new TimestampBinary(timeStampToken.toCMSSignedData().getEncoded());
         } catch (Exception e) {
             throw new IllegalStateException("TestTSPSource failed to mint timestamp", e);
         }

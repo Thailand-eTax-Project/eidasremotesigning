@@ -91,6 +91,7 @@ class CSCSignatureServiceValidateSignatureTest {
         // CSCSignatureService only uses documentFormatUtil/awskmsService/etc. for the
         // signing paths; validateSignature() needs just the instance. Pass null for
         // the optional AWSKMSService (6th-to-last arg) — matches @Autowired(required=false).
+        // certificateVerifier + tspSource are injected for signing/timestamp paths (unused here).
         service = new CSCSignatureService(
                 certificateRepository,
                 certificateService,
@@ -103,7 +104,10 @@ class CSCSignatureServiceValidateSignatureTest {
                 documentFormatUtil,
                 asyncExecutor,
                 null,                       // AWSKMSService (optional)
-                "http://tsa.belgium.be/connect",
+                new eu.europa.esig.dss.validation.CommonCertificateVerifier(),
+                (eu.europa.esig.dss.spi.x509.tsp.TSPSource) (digestAlgorithm, digest) -> {
+                    throw new UnsupportedOperationException("TSP not configured for unit test");
+                },
                 30);
 
         SecurityContext ctx = SecurityContextHolder.createEmptyContext();
