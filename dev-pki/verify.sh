@@ -6,9 +6,9 @@ cd "$(dirname "$0")"
 
 TRUSTSTORE_PASSWORD="${DEV_PKI_TRUSTSTORE_PASSWORD:-changeit}"
 SIGNER_PASSWORD="${DEV_PKI_SIGNER_PASSWORD:-etax-dev-signer-pw}"
-BCFIPS_JAR=$(ls "$HOME"/.m2/repository/org/bouncycastle/bc-fips/*/bc-fips-*.jar 2>/dev/null | grep -v -- '-sources\.jar$' | sort -V | tail -1)
-[ -n "$BCFIPS_JAR" ] \
-  || echo "WARN: bc-fips jar not in ~/.m2 (run 'mvn dependency:resolve') — the BCFKS check will FAIL"
+BC_JAR=$(ls "$HOME"/.m2/repository/org/bouncycastle/bcprov-jdk18on/*/bcprov-jdk18on-*.jar 2>/dev/null | grep -v -- '-sources\.jar$' | sort -V | tail -1)
+[ -n "$BC_JAR" ] \
+  || echo "WARN: bcprov-jdk18on jar not in ~/.m2 (run 'mvn dependency:resolve') — the BCFKS check will FAIL"
 FAIL=0
 
 check() { # $1 = description, rest = command
@@ -77,10 +77,10 @@ check "PKCS12 trust store lists >=2 trusted entries" \
   bash -c "keytool -list -keystore out/truststore/dss-truststore.p12 -storetype PKCS12 \
     -storepass '$TRUSTSTORE_PASSWORD' | grep -c trustedCertEntry | grep -qE '^[23]$'"
 
-check "BCFKS trust store lists >=2 trusted entries (BCFIPS provider)" \
+check "BCFKS trust store lists >=2 trusted entries (BC provider)" \
   bash -c "keytool -list -keystore out/truststore/dss-truststore.bcfks -storetype BCFKS \
-    -providerclass org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider \
-    -providerpath '$BCFIPS_JAR' \
+    -providerclass org.bouncycastle.jce.provider.BouncyCastleProvider \
+    -providerpath '$BC_JAR' \
     -storepass '$TRUSTSTORE_PASSWORD' | grep -c trustedCertEntry | grep -qE '^[23]$'"
 
 echo

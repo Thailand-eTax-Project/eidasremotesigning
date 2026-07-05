@@ -21,8 +21,8 @@ SIGNER_PASSWORD="${DEV_PKI_SIGNER_PASSWORD:-etax-dev-signer-pw}"
 
 command -v keytool >/dev/null 2>&1 || { echo "ERROR: keytool not found (install a JDK)" >&2; exit 1; }
 [ -f out/signer/signer.p12 ] || { echo "ERROR: PKI not generated — run ./generate.sh first" >&2; exit 1; }
-BCFIPS_JAR=$(ls "$HOME"/.m2/repository/org/bouncycastle/bc-fips/*/bc-fips-*.jar 2>/dev/null | grep -v -- '-sources\.jar$' | sort -V | tail -1 || true)
-[ -n "$BCFIPS_JAR" ] || { echo "ERROR: bc-fips jar not in ~/.m2 — run 'mvn dependency:resolve' first" >&2; exit 1; }
+BC_JAR=$(ls "$HOME"/.m2/repository/org/bouncycastle/bcprov-jdk18on/*/bcprov-jdk18on-*.jar 2>/dev/null | grep -v -- '-sources\.jar$' | sort -V | tail -1 || true)
+[ -n "$BC_JAR" ] || { echo "ERROR: bcprov-jdk18on jar not in ~/.m2 — run 'mvn dependency:resolve' first" >&2; exit 1; }
 
 CERT_ID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)
 KS_FILE="$KEYSTORE_DIR/etax-dev-signer-$CERT_ID.bcfks"
@@ -31,8 +31,8 @@ mkdir -p "$KEYSTORE_DIR"
 keytool -importkeystore \
   -srckeystore out/signer/signer.p12 -srcstoretype PKCS12 -srcstorepass "$SIGNER_PASSWORD" \
   -destkeystore "$KS_FILE" -deststoretype BCFKS -deststorepass "$SIGNER_PASSWORD" \
-  -providerclass org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider \
-  -providerpath "$BCFIPS_JAR"
+  -providerclass org.bouncycastle.jce.provider.BouncyCastleProvider \
+  -providerpath "$BC_JAR"
 
 # Linux idioms ('base64 -w0', /proc uuid fallback above); on macOS use
 # 'base64' (no wrap flag needed) and uuidgen.

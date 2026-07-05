@@ -1,6 +1,6 @@
 # eIDAS Remote Signing Service
 
-A Spring Boot application that provides eIDAS-compliant remote signing capabilities with support for **PKCS#11 hardware tokens**, **AWS KMS**, and **BCFKS (Bouncy Castle FIPS KeyStore)**.
+A Spring Boot application that provides eIDAS-compliant remote signing capabilities with support for **PKCS#11 hardware tokens**, **AWS KMS**, and **BCFKS (Bouncy Castle KeyStore)**.
 
 ## Overview
 
@@ -8,7 +8,7 @@ This service allows for secure digital signing operations compliant with the eID
 
 Key features:
 - OAuth2 client registration and authentication
-- **Multiple key storage options**: PKCS#11 HSM, AWS KMS, BCFKS (FIPS 140-2/3 compliant local keystore)
+- **Multiple key storage options**: PKCS#11 HSM, AWS KMS, BCFKS (Bouncy Castle local keystore via `bcprov-jdk18on 1.84`)
 - XAdES and PAdES signature formats with **EU DSS library integration**
 - **SAD (Signature Activation Data) authentication** for CSC API v2.0 compliant signing flows
 - Comprehensive audit logging and metrics
@@ -26,7 +26,7 @@ Key features:
 |--------------|----------|------------------|----------|
 | **AWS KMS** ☁️ | ⭐⭐⭐⭐⭐ | ✅ Yes | Cloud-native, scalable production |
 | **PKCS#11 HSM** | ⭐⭐⭐⭐⭐ | ✅ Yes | On-premise production with hardware HSM |
-| **BCFKS** (Bouncy Castle FIPS) | ⭐⭐⭐⭐ | ✅ Yes | FIPS 140-2/3 compliant local keystore |
+| **BCFKS** (Bouncy Castle) | ⭐⭐⭐ | ✅ Yes | Local keystore (no HSM); not FIPS-validated software crypto |
 
 ## System Requirements
 
@@ -97,15 +97,15 @@ java -jar target/eidasremotesigning-0.0.1-SNAPSHOT.jar
 
 The service will start on port 9000 by default.
 
-### Option C: BCFKS (Bouncy Castle FIPS KeyStore)
+### Option C: BCFKS (Bouncy Castle KeyStore)
 
-To run without any HSM, disable PKCS#11. The service will use BCFKS as the local keystore backend, which is FIPS 140-2/3 compliant via the Bouncy Castle FIPS provider (`bc-fips 2.1.2`):
+To run without any HSM, disable PKCS#11. The service will use BCFKS as the local keystore backend, via the plain (non-FIPS) Bouncy Castle JCE provider (`bcprov-jdk18on 1.84`). Note: the BCFKS software-crypto stack is **not** FIPS 140-2/3 validated. To obtain a FIPS-validated key-custody boundary in production, use the PKCS#11 HSM or AWS KMS backend instead — both retain their hardware/cloud-validation guarantees independent of this provider.
 
 ```bash
 PKCS11_ENABLED=false java -jar target/eidasremotesigning-0.0.1-SNAPSHOT.jar
 ```
 
-BCFKS keystores are stored as `.bfks` files under `KEYSTORE_PATH`. Passwords must be at least 14 characters (FIPS requirement). The BCFIPS JCE provider is registered automatically at startup at JVM provider position 2, coexisting with EU DSS's Bouncy Castle provider.
+BCFKS keystores are stored as `.bfks` files under `KEYSTORE_PATH`. Passwords must be at least 14 characters (enforced by `BCFKSService.MIN_PASSWORD_LENGTH`). The plain `BC` JCE provider is registered at startup via `Security.addProvider` in `BouncyCastleConfig`; provider ordering relative to EU DSS's own Bouncy Castle registration is not guaranteed.
 
 ### 4. Register a Client
 
@@ -439,7 +439,7 @@ The application is built on Spring Boot and follows a standard layered architect
 
 - **OAuth2 Authorization Server**: Provides authentication and authorization
 - **PKCS#11 Integration**: Enables hardware token access
-- **BCFKS / Bouncy Castle FIPS**: FIPS 140-2/3 compliant local keystore via `bc-fips 2.1.2`; BCFIPS provider registered at startup, scoped at JVM position 2
+- **BCFKS / Bouncy Castle**: local keystore via `bcprov-jdk18on 1.84` (plain BC provider, not FIPS-validated); registered at startup via `Security.addProvider` in `BouncyCastleConfig`, JVM provider position not guaranteed
 - **EU DSS Integration**: PAdES (PDF) and XAdES (XML) document signing via EU Digital Signature Services library
 - **Signing Service**: Handles digital signature operations across all three key storage backends (AWSKMS, PKCS#11, BCFKS)
 - **CSC API Implementation**: Implements the CSC API v2.0 specification with SAD-based authorization
@@ -535,7 +535,7 @@ This service is designed to be compliant with:
 - eIDAS Regulation (EU) 910/2014
 - Cloud Signature Consortium API v2.0
 - ETSI standards for Advanced Electronic Signatures (XAdES, PAdES)
-- **FIPS 140-2 / 140-3** — local keystore operations use Bouncy Castle FIPS (`bc-fips 2.1.2`) with BCFKS keystore format
+- **FIPS 140-2 / 140-3** — local keystore operations use the plain (non-FIPS) Bouncy Castle provider (`bcprov-jdk18on 1.84`) with BCFKS keystore format. FIPS validation applies only to PKCS#11 HSM and AWS KMS key custody; the BCFKS backend is a development/dev-tier option and must not be relied on for FIPS-validated signing.
 
 ## Advanced Usage
 

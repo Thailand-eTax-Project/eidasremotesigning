@@ -24,9 +24,9 @@ for tool in openssl keytool curl; do
   command -v "$tool" >/dev/null 2>&1 || { echo "ERROR: '$tool' not found on PATH" >&2; exit 1; }
 done
 # Exclude -sources.jar siblings: Maven installs both, and sort -V | tail -1 would
-# otherwise pick the sources-only jar (no .class files for the FIPS provider).
-BCFIPS_JAR=$(ls "$HOME"/.m2/repository/org/bouncycastle/bc-fips/*/bc-fips-*.jar 2>/dev/null | grep -v -- '-sources\.jar$' | sort -V | tail -1 || true)
-[ -n "$BCFIPS_JAR" ] || { echo "ERROR: bc-fips jar not in ~/.m2 — run 'mvn dependency:resolve' in eidasremotesigning" >&2; exit 1; }
+# otherwise pick the sources-only jar (no .class files for the BC provider).
+BC_JAR=$(ls "$HOME"/.m2/repository/org/bouncycastle/bcprov-jdk18on/*/bcprov-jdk18on-*.jar 2>/dev/null | grep -v -- '-sources\.jar$' | sort -V | tail -1 || true)
+[ -n "$BC_JAR" ] || { echo "ERROR: bcprov-jdk18on jar not in ~/.m2 — run 'mvn dependency:resolve' in eidasremotesigning" >&2; exit 1; }
 
 if [ -d out ]; then
   if [ "$FORCE" -eq 1 ]; then
@@ -91,17 +91,18 @@ openssl pkcs12 -export -name etax-dev-signer \
   -passout "pass:$SIGNER_PASSWORD" -out out/signer/signer.p12
 
 echo "== DSS trust stores (PKCS12 + BCFKS)"
-# BCFKS is the canonical target for app.dss.trust-store.path: the BCFIPS
-# provider does not implement the standard PKCS12 keystore type, so under a
-# FIPS-strict JVM a PKCS12 trust store may fail to load in the service.
+# BCFKS is the canonical target for app.dss.trust-store.path: it provides a
+# single-file keystore with strong KDF-based password stretching suitable for
+# the plain BC JCE provider used by BCFKSService. PKCS12 is also produced for
+# inspection by tools / workflows that don't have the BC provider classpath.
 import_trusted() { # $1 = alias, $2 = cert file (PEM or DER)
   keytool -importcert -noprompt -alias "$1" -file "$2" \
     -keystore out/truststore/dss-truststore.p12 -storetype PKCS12 \
     -storepass "$TRUSTSTORE_PASSWORD"
   keytool -importcert -noprompt -alias "$1" -file "$2" \
     -keystore out/truststore/dss-truststore.bcfks -storetype BCFKS \
-    -providerclass org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider \
-    -providerpath "$BCFIPS_JAR" \
+    -providerclass org.bouncycastle.jce.provider.BouncyCastleProvider \
+    -providerpath "$BC_JAR" \
     -storepass "$TRUSTSTORE_PASSWORD"
 }
 import_trusted etax-dev-root    out/ca/root/root.crt

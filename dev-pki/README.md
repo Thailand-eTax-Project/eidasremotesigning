@@ -30,7 +30,7 @@ Key outputs (see generate.sh summary for passwords):
 | LT worked last month, now fails with expired/stale CRL | `./renew-crls.sh` (CRL nextUpdate is 30 days) |
 | OCSP still says `good` right after a revocation | expected: only `./revoke.sh` restarts the responder, and `-nmin 5` allows ~5 min staleness. `renew-crls.sh` never touches OCSP. |
 | Signing at LTA succeeds but validation stops at LT | freetsa CA not trusted — regenerate with `--include-freetsa` or import `https://freetsa.org/files/cacert.pem` into the trust stores |
-| Service can't load the PKCS12 trust store under FIPS | use the `.bcfks` trust store — BCFIPS doesn't implement the standard PKCS12 keystore type |
+| Service can't load the PKCS12 trust store | use the `.bcfks` trust store — BCFKS is the canonical target for `app.dss.trust-store.path` and EU DSS loads BCFKS natively via the plain BC provider; PKCS12 is included for inspection only |
 | `generate.sh` refuses to run | `out/` exists; use `--force` **and re-register** certs (DB rows, SoftHSM, copied trust stores) |
 
 ## Warnings
