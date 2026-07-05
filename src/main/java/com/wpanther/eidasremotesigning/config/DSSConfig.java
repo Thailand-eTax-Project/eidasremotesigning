@@ -2,6 +2,7 @@ package com.wpanther.eidasremotesigning.config;
 
 import eu.europa.esig.dss.service.crl.OnlineCRLSource;
 import eu.europa.esig.dss.service.http.commons.CommonsDataLoader;
+import eu.europa.esig.dss.service.http.commons.OCSPDataLoader;
 import eu.europa.esig.dss.service.ocsp.OnlineOCSPSource;
 import eu.europa.esig.dss.service.tsp.OnlineTSPSource;
 import eu.europa.esig.dss.spi.x509.CommonTrustedCertificateSource;
@@ -96,9 +97,14 @@ public class DSSConfig {
         // wiring would fail their LT/LTA with "Revocation data is missing".
         // DSS's default loading strategy tries OCSP first and falls back to
         // the CRL source above when the responder misbehaves (e.g. the dev
-        // OpenSSL responder's incomplete bodies), so this is strictly additive.
-        verifier.setOcspSource(new OnlineOCSPSource());
-        log.info("DSS OnlineOCSPSource wired (AIA-OCSP with CRL fallback)");
+        // OpenSSL responder never answers DSS's POST), so this is strictly
+        // additive. Short timeouts: the data loader's 60s default would stall
+        // every signing request by a minute per cert when a responder hangs.
+        OCSPDataLoader ocspLoader = new OCSPDataLoader();
+        ocspLoader.setTimeoutConnection(5_000);
+        ocspLoader.setTimeoutSocket(5_000);
+        verifier.setOcspSource(new OnlineOCSPSource(ocspLoader));
+        log.info("DSS OnlineOCSPSource wired (AIA-OCSP, 5s timeouts, CRL fallback)");
 
         return verifier;
     }

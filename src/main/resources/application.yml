@@ -75,7 +75,9 @@ app:
       # there degrades LT/LTA chain validation silently, so the warning must be monitored.
       path: ${DSS_TRUSTSTORE_PATH:dev-pki/out/truststore/dss-truststore.bcfks}
       type: ${DSS_TRUSTSTORE_TYPE:BCFKS}
-      password: ${DSS_TRUSTSTORE_PASSWORD:}
+      # Default matches dev-pki/generate.sh's trust-store password so the
+      # out-of-box dev claim above actually holds.
+      password: ${DSS_TRUSTSTORE_PASSWORD:changeit}
 
   # Asynchronous Operation Configuration
   async:
