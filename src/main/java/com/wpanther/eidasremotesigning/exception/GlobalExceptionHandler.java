@@ -47,9 +47,21 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(SigningException.class)
-    public ResponseEntity<ErrorResponse> handleSigningException(SigningException ex) {
+    public ResponseEntity<Object> handleSigningException(SigningException ex, WebRequest request) {
         log.error("Signing error", ex);
-        return createErrorResponse(ex.getMessage(), HttpStatus.BAD_REQUEST);
+        // CSC endpoints must return the spec error shape {error, error_description},
+        // not the generic {message, status, timestamp} body (CSC v2.0 section 8) —
+        // e.g. a TSP outage at level T+ surfaces here as "signing_error".
+        String path = ((ServletWebRequest) request).getRequest().getRequestURI();
+        if (path.startsWith("/csc/v2/")) {
+            CSCErrorResponse errorResponse = CSCErrorResponse.builder()
+                    .error(CSCConstants.ERROR_SIGNING_ERROR)
+                    .errorDescription(ex.getMessage())
+                    .build();
+            return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+        }
+        return new ResponseEntity<>(new ErrorResponse(
+                ex.getMessage(), HttpStatus.BAD_REQUEST.value(), Instant.now()), HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(CSCUnsupportedOperationException.class)

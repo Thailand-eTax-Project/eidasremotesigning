@@ -2,6 +2,7 @@ package com.wpanther.eidasremotesigning.config;
 
 import eu.europa.esig.dss.service.crl.OnlineCRLSource;
 import eu.europa.esig.dss.service.http.commons.CommonsDataLoader;
+import eu.europa.esig.dss.service.ocsp.OnlineOCSPSource;
 import eu.europa.esig.dss.service.tsp.OnlineTSPSource;
 import eu.europa.esig.dss.spi.x509.CommonTrustedCertificateSource;
 import eu.europa.esig.dss.spi.x509.KeyStoreCertificateSource;
@@ -11,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 
 import java.io.File;
 
@@ -42,7 +44,12 @@ public class DSSConfig {
     @Value("${app.tsp.url:https://freetsa.org/tsr}")
     private String tspUrl;
 
+    // Opening the BCFKS trust store needs the BC provider registered first.
+    // Without this ordering the KeyStore.getInstance("BCFKS") below fails on
+    // nondeterministic bean order and the catch degrades production to a
+    // silently trust-less verifier.
     @Bean
+    @DependsOn("bouncyCastleProvider")
     public CommonCertificateVerifier certificateVerifier() {
         CommonCertificateVerifier verifier = new CommonCertificateVerifier();
         if (truststorePath != null && !truststorePath.isBlank()
@@ -83,6 +90,15 @@ public class DSSConfig {
         OnlineCRLSource crlSource = new OnlineCRLSource(new CommonsDataLoader());
         verifier.setCrlSource(crlSource);
         log.info("DSS OnlineCRLSource wired (AIA-CRL fetch via CommonsDataLoader)");
+
+        // Also wire OCSP: CAs whose certificates carry OCSP-only AIA (no CRL
+        // Distribution Point) are common in production PKIs, and CRL-only
+        // wiring would fail their LT/LTA with "Revocation data is missing".
+        // DSS's default loading strategy tries OCSP first and falls back to
+        // the CRL source above when the responder misbehaves (e.g. the dev
+        // OpenSSL responder's incomplete bodies), so this is strictly additive.
+        verifier.setOcspSource(new OnlineOCSPSource());
+        log.info("DSS OnlineOCSPSource wired (AIA-OCSP with CRL fallback)");
 
         return verifier;
     }
