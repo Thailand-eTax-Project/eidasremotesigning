@@ -261,6 +261,12 @@ public class CSCSignatureService {
                     String signAlgoOid = entry.getSignAlgo();
                     String jcaSigAlgo = OIDMapper.toJcaSigAlgo(signAlgoOid);
 
+                    // Same guard order as the documents[] path below:
+                    // 1) signature_format (-> 400 unsupported_operation),
+                    // 2) conformance_level (-> 400 invalid_request) — so combined
+                    // invalid input yields the same error code on both paths.
+                    DigestSigningRequest.SignatureType signatureType = mapSignatureFormat(entry.getSignature_format());
+
                     // documentDigests[] returns raw signatures; only Baseline-B applies.
                     // Anything stricter is a misuse (documentDigests do not produce
                     // an AdES container) -> 400 invalid_request.
@@ -270,9 +276,6 @@ public class CSCSignatureService {
                                 "conformance_level " + entry.getConformance_level()
                                         + " is not supported for documentDigests (raw signature path)");
                     }
-
-                    // Determine signature type from the CSC wire value (P/X/PADES/XADES).
-                    DigestSigningRequest.SignatureType signatureType = mapSignatureFormat(entry.getSignature_format());
 
                     // Validate eIDAS compliance for first digest entry
                     if (signedDocuments.isEmpty()) {
