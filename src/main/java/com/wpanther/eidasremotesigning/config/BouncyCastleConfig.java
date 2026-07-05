@@ -20,14 +20,14 @@ public class BouncyCastleConfig {
 
     @Bean
     public BouncyCastleProvider bouncyCastleProvider() {
-        BouncyCastleProvider provider = new BouncyCastleProvider();
-        if (Security.getProvider("BC") == null) {
-            Security.addProvider(provider);
-            log.info("Registered BouncyCastle (BC) provider");
-        } else {
+        BouncyCastleProvider existing = (BouncyCastleProvider) Security.getProvider("BC");
+        if (existing != null) {
             log.info("BouncyCastle (BC) provider already registered");
-            provider = (BouncyCastleProvider) Security.getProvider("BC");
+            return existing;
         }
+        BouncyCastleProvider provider = new BouncyCastleProvider();
+        Security.addProvider(provider);
+        log.info("Registered BouncyCastle (BC) provider");
         return provider;
     }
 }

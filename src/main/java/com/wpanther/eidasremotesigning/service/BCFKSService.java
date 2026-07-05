@@ -117,7 +117,7 @@ public class BCFKSService {
         if (password == null || password.length() < MIN_PASSWORD_LENGTH) {
             throw new IllegalArgumentException(
                     "BCFKS keystore password must be at least " + MIN_PASSWORD_LENGTH
-                    + " characters (FIPS requirement)");
+                    + " characters (BCFKS keystore requirement)");
         }
     }
 }

@@ -88,7 +88,7 @@ public class SignDocIT {
     private static byte[] pdfBytes;
 
     private static final String KEYSTORE_ALIAS = "signdoc-it";
-    // >= 14 chars (BCFKSService.MIN_PASSWORD_LENGTH, FIPS requirement)
+    // >= 14 chars (BCFKSService.MIN_PASSWORD_LENGTH, BCFKS keystore requirement)
     private static final String KEYSTORE_PASSWORD = "signdoc-it-password";
     private static final String SHA256_RSA_OID = "1.2.840.113549.1.1.11";
     private static final String SHA256_OID = "2.16.840.1.101.3.4.2.1";
@@ -143,7 +143,7 @@ public class SignDocIT {
     public void testSeedBcfksCredential() throws Exception {
         assumeTrue(clientId != null, "clientId must be set by testClientRegistration");
 
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA", "BC");
         kpg.initialize(2048);
         KeyPair keyPair = kpg.generateKeyPair();
         X509Certificate certificate = selfSign(keyPair);
