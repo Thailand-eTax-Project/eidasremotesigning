@@ -6,6 +6,7 @@ import com.wpanther.eidasremotesigning.entity.AsyncOperation;
 import com.wpanther.eidasremotesigning.entity.SigningCertificate;
 import com.wpanther.eidasremotesigning.entity.SigningLog;
 import com.wpanther.eidasremotesigning.entity.TransactionAuthorization;
+import com.wpanther.eidasremotesigning.exception.CSCUnsupportedOperationException;
 import com.wpanther.eidasremotesigning.exception.SigningException;
 import com.wpanther.eidasremotesigning.exception.SigningInProgressException;
 import com.wpanther.eidasremotesigning.repository.AsyncOperationRepository;
@@ -255,13 +256,16 @@ public class CSCSignatureService {
                     String signAlgoOid = entry.getSignAlgo();
                     String jcaSigAlgo = OIDMapper.toJcaSigAlgo(signAlgoOid);
 
+                    // Determine signature type from the CSC wire value (P/X/PADES/XADES).
+                    DigestSigningRequest.SignatureType signatureType = mapSignatureFormat(entry.getSignature_format());
+
                     // Validate eIDAS compliance for first digest entry
                     if (signedDocuments.isEmpty()) {
                         DigestSigningRequest validationRequest = DigestSigningRequest.builder()
                                 .certificateId(credentialId)
                                 .digestValue(entry.getHashes().get(0))
                                 .digestAlgorithm(hashAlgo)
-                                .signatureType(DigestSigningRequest.SignatureType.XADES)
+                                .signatureType(signatureType)
                                 .build();
                         eidasComplianceService.validateEIDASCompliance(validationRequest, certificate);
                     }
@@ -283,7 +287,7 @@ public class CSCSignatureService {
                             DigestSigningRequest.builder()
                                     .certificateId(credentialId)
                                     .digestAlgorithm(hashAlgo)
-                                    .signatureType(DigestSigningRequest.SignatureType.XADES)
+                                    .signatureType(signatureType)
                                     .build(),
                             jcaSigAlgo);
                 }
@@ -316,11 +320,9 @@ public class CSCSignatureService {
                     MessageDigest digest = MessageDigest.getInstance(hashAlgo);
                     byte[] digestBytes = digest.digest(documentBytes);
 
-                    // Determine signature type from format
-                    DigestSigningRequest.SignatureType signatureType =
-                            "PADES".equalsIgnoreCase(signatureFormat) ?
-                                    DigestSigningRequest.SignatureType.PADES :
-                                    DigestSigningRequest.SignatureType.XADES;
+                    // Determine signature type from the CSC wire value (P/X/PADES/XADES).
+                    // Unsupported values (C, J, unknown) throw -> 400 unsupported_operation.
+                    DigestSigningRequest.SignatureType signatureType = mapSignatureFormat(signatureFormat);
 
                     // Validate eIDAS compliance
                     DigestSigningRequest validationRequest = DigestSigningRequest.builder()
@@ -706,6 +708,31 @@ public class CSCSignatureService {
         System.arraycopy(prefix, 0, out, 0, prefix.length);
         System.arraycopy(digest, 0, out, prefix.length, digest.length);
         return out;
+    }
+
+    /**
+     * Maps a CSC v2.0 signature_format wire value to the internal SignatureType.
+     * Accepted (case-insensitive): "P"/"PADES" -> PADES, "X"/"XADES" -> XADES.
+     * Everything else (including "C", "J", null) throws CSCUnsupportedOperationException,
+     * which GlobalExceptionHandler maps to HTTP 400 "unsupported_operation".
+     */
+    static DigestSigningRequest.SignatureType mapSignatureFormat(String signatureFormat) {
+        if (signatureFormat == null) {
+            throw new CSCUnsupportedOperationException(
+                    "signature_format is required (supported: P, X)");
+        }
+        switch (signatureFormat.trim().toUpperCase()) {
+            case "P":
+            case "PADES":
+                return DigestSigningRequest.SignatureType.PADES;
+            case "X":
+            case "XADES":
+                return DigestSigningRequest.SignatureType.XADES;
+            default:
+                throw new CSCUnsupportedOperationException(
+                        "Unsupported signature_format: " + signatureFormat
+                                + " (supported: P, X)");
+        }
     }
 
     /**

@@ -2,6 +2,7 @@ package com.wpanther.eidasremotesigning.exception;
 
 import com.wpanther.eidasremotesigning.controller.CSCOAuth2Controller.CSCOAuth2Exception;
 import com.wpanther.eidasremotesigning.dto.csc.CSCErrorResponse;
+import com.wpanther.eidasremotesigning.util.CSCConstants;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -49,6 +50,16 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleSigningException(SigningException ex) {
         log.error("Signing error", ex);
         return createErrorResponse(ex.getMessage(), HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(CSCUnsupportedOperationException.class)
+    public ResponseEntity<CSCErrorResponse> handleCSCUnsupportedOperation(CSCUnsupportedOperationException ex) {
+        log.error("Unsupported CSC operation", ex);
+        CSCErrorResponse errorResponse = CSCErrorResponse.builder()
+                .error(CSCConstants.ERROR_UNSUPPORTED_OPERATION)
+                .errorDescription(ex.getMessage())
+                .build();
+        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(SigningInProgressException.class)
