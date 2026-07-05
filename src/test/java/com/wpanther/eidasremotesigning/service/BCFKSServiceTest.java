@@ -16,6 +16,7 @@ import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.*;
+import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
 import java.util.Date;
 
@@ -137,6 +138,29 @@ class BCFKSServiceTest {
             .isInstanceOf(KeyStoreException.class);
     }
 
+    // --- createKeystore(chain) + loadCertificateChain ---
+
+    @Test
+    void loadCertificateChain_returnsChainStoredByCreateKeystore() throws Exception {
+        // EE self-signed + an intermediate also self-signed, treated as a 2-cert chain.
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA", "BC");
+        kpg.initialize(2048);
+        KeyPair eeKp = kpg.generateKeyPair();
+        KeyPair intermediateKp = kpg.generateKeyPair();
+        X509Certificate eeCert = generateSelfSignedCert(eeKp, new X500Name("CN=ee,O=Test,C=TH"));
+        X509Certificate intermediateCert = generateSelfSignedCert(intermediateKp, new X500Name("CN=ca,O=Test,C=TH"));
+        Certificate[] chain = new Certificate[] { eeCert, intermediateCert };
+
+        String path = service.createKeystore("chainalias", eeKp.getPrivate(), chain, TEST_PASSWORD);
+        X509Certificate[] loaded = service.loadCertificateChain(path, "chainalias", TEST_PASSWORD);
+
+        assertThat(loaded).hasSize(2);
+        assertThat(loaded[0].getSubjectX500Principal())
+                .isEqualTo(eeCert.getSubjectX500Principal());
+        assertThat(loaded[1].getSubjectX500Principal())
+                .isEqualTo(intermediateCert.getSubjectX500Principal());
+    }
+
     // --- deleteKeystore ---
 
     @Test
@@ -164,19 +188,11 @@ class BCFKSServiceTest {
     }
 
     static X509Certificate generateSelfSignedCert(KeyPair keyPair) throws Exception {
-        X500Name subject = new X500Name("CN=Test,O=Test,C=TH");
-        Date notBefore = new Date();
-        Date notAfter = new Date(System.currentTimeMillis() + 365L * 24 * 60 * 60 * 1000);
+        return com.wpanther.eidasremotesigning.integration.TestUtils.generateSelfSignedCert(
+                keyPair, new X500Name("CN=Test,O=Test,C=TH"));
+    }
 
-        JcaX509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(
-                subject, BigInteger.ONE, notBefore, notAfter, subject, keyPair.getPublic());
-
-        ContentSigner signer = new JcaContentSignerBuilder("SHA256withRSA")
-                .setProvider("BC")
-                .build(keyPair.getPrivate());
-
-        return new JcaX509CertificateConverter()
-                .setProvider("BC")
-                .getCertificate(builder.build(signer));
+    static X509Certificate generateSelfSignedCert(KeyPair keyPair, X500Name subject) throws Exception {
+        return com.wpanther.eidasremotesigning.integration.TestUtils.generateSelfSignedCert(keyPair, subject);
     }
 }

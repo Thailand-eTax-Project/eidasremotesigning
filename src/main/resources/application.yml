@@ -64,6 +64,19 @@ app:
   tsp:
     url: ${TSP_URL:https://freetsa.org/tsr}
 
+  # DSS Validation Configuration (LT/LTA requires validation material)
+  dss:
+    truststore:
+      # Path to the DSS trust store (BCFKS or PKCS12). Default: the dev-PKI trust store
+      # (matches the spec; works out-of-box in dev). If the file is absent, the verifier
+      # is created with no explicit trusted source and logs a warning — B/T still work
+      # (DSS verifies cryptographically via the embedded cert); LT/LTA chain pinning is
+      # skipped. Prod deployers MUST set DSS_TRUSTSTORE_PATH explicitly; a missing file
+      # there degrades LT/LTA chain validation silently, so the warning must be monitored.
+      path: ${DSS_TRUSTSTORE_PATH:dev-pki/out/truststore/dss-truststore.bcfks}
+      type: ${DSS_TRUSTSTORE_TYPE:BCFKS}
+      password: ${DSS_TRUSTSTORE_PASSWORD:}
+
   # Asynchronous Operation Configuration
   async:
     # Thread pool configuration

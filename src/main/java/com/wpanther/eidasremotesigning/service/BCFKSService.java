@@ -50,11 +50,56 @@ public class BCFKSService {
     }
 
     /**
+     * Creates a BCFKS keystore containing a private key and a full certificate chain.
+     * Required for LT/LTA (DSS embeds the chain as validation material).
+     *
+     * @param alias       the entry alias
+     * @param privateKey  the private key bound to the alias
+     * @param chain       the certificate chain (EE + intermediates [+ root])
+     * @param password    the keystore password
+     * @return the absolute path to the created .bfks file
+     */
+    public String createKeystore(String alias, PrivateKey privateKey,
+                                 Certificate[] chain, String password) throws Exception {
+        validatePassword(password);
+        Files.createDirectories(Paths.get(keystoreBasePath));
+        String keystorePath = keystoreBasePath + "/" + UUID.randomUUID() + FILE_EXTENSION;
+
+        KeyStore ks = KeyStore.getInstance(KEYSTORE_TYPE, PROVIDER);
+        ks.load(null, password.toCharArray());
+        ks.setKeyEntry(alias, privateKey, password.toCharArray(), chain);
+
+        try (FileOutputStream fos = new FileOutputStream(keystorePath)) {
+            ks.store(fos, password.toCharArray());
+        }
+        log.info("Created BCFKS keystore (chain, {} certs) at: {}", chain.length, keystorePath);
+        return keystorePath;
+    }
+
+    /**
      * Loads the X509Certificate for the given alias from a BCFKS keystore file.
      */
     public X509Certificate loadCertificate(String keystorePath, String alias,
                                            String password) throws Exception {
         return (X509Certificate) loadKeyStore(keystorePath, password).getCertificate(alias);
+    }
+
+    /**
+     * Loads the full certificate chain for an alias from a BCFKS keystore.
+     * Returns an empty array if the alias has no chain entry.
+     */
+    public X509Certificate[] loadCertificateChain(String keystorePath, String alias,
+                                                  String password) throws Exception {
+        java.security.cert.Certificate[] chain =
+                loadKeyStore(keystorePath, password).getCertificateChain(alias);
+        if (chain == null) {
+            return new X509Certificate[0];
+        }
+        X509Certificate[] result = new X509Certificate[chain.length];
+        for (int i = 0; i < chain.length; i++) {
+            result[i] = (X509Certificate) chain[i];
+        }
+        return result;
     }
 
     /**

@@ -180,4 +180,33 @@ public class PKCS11Service {
     public String getProviderName() {
         return pkcs11Provider.getName();
     }
+
+    /**
+     * Loads the full certificate chain held on the PKCS#11 token for the given alias.
+     * Used for LT/LTA (DSS embeds the chain). The token must hold the chain as cert objects.
+     *
+     * @param alias The certificate alias
+     * @param pin   The user PIN
+     * @return the chain; an empty array if the alias has no chain entry
+     */
+    public X509Certificate[] getCertificateChain(String alias, String pin) {
+        try {
+            // Initialize the keystore with the PIN (same pattern as the other methods in this class)
+            pkcs11KeyStore.load(null, pin.toCharArray());
+
+            java.security.cert.Certificate[] chain = pkcs11KeyStore.getCertificateChain(alias);
+            if (chain == null) {
+                return new X509Certificate[0];
+            }
+            X509Certificate[] result = new X509Certificate[chain.length];
+            for (int i = 0; i < chain.length; i++) {
+                result[i] = (X509Certificate) chain[i];
+            }
+            return result;
+        } catch (Exception e) {
+            log.error("Failed to load certificate chain from PKCS#11 token", e);
+            throw new CertificateException(
+                    "Failed to load certificate chain from PKCS#11: " + e.getMessage(), e);
+        }
+    }
 }

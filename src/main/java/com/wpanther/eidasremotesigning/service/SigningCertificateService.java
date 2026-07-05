@@ -427,6 +427,34 @@ public class SigningCertificateService {
         return bcfksService.loadCertificate(
                 cert.getKeystorePath(), cert.getCertificateAlias(), cert.getKeystorePassword());
     }
+
+    /**
+     * Loads the certificate chain for a credential (EE + intermediates + root).
+     * BCFKS/PKCS#11 read from the keystore/token; AWSKMS returns a single-element array
+     * of the EE cert (only used at Baseline-B; AWSKMS supports only Baseline-B).
+     *
+     * @param certificateId the credential ID
+     * @param pin           the PIN for PKCS#11 tokens (ignored for AWSKMS)
+     * @return the certificate chain
+     */
+    public X509Certificate[] getCertificateChain(String certificateId, String pin) throws Exception {
+        SigningCertificate cert = certificateRepository.findById(certificateId)
+                .orElseThrow(() -> new com.wpanther.eidasremotesigning.exception.SigningException(
+                        "Certificate not found: " + certificateId));
+        String storageType = cert.getStorageType();
+        if ("AWSKMS".equals(storageType)) {
+            // AWSKMS only stores the EE cert; the signing code path uses this at Baseline-B
+            // where no chain is embedded.
+            X509Certificate ee = getCertificateWithX509(certificateId, null).getX509Certificate();
+            return new X509Certificate[] { ee };
+        } else if ("PKCS11".equals(storageType)) {
+            return requirePkcs11Service().getCertificateChain(cert.getCertificateAlias(), pin);
+        } else {
+            // BCFKS (default)
+            return bcfksService.loadCertificateChain(
+                    cert.getKeystorePath(), cert.getCertificateAlias(), cert.getKeystorePassword());
+        }
+    }
     
     /**
      * Gets the private key for a certificate

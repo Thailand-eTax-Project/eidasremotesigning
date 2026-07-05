@@ -1,11 +1,24 @@
 package com.wpanther.eidasremotesigning.integration;
 
+import java.math.BigInteger;
+import java.security.KeyPair;
 import java.security.MessageDigest;
 import java.security.cert.X509Certificate;
 import java.util.Base64;
+import java.util.Date;
+
+import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
+import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 
 /**
- * Utility methods for integration testing
+ * Utility methods for integration testing.
+ *
+ * <p>The {@code generateSelfSignedCert} overloads live here so any test (BCFKS
+ * service tests, custom {@code TestTSPSource}, etc.) can build a quick X.509
+ * certificate under BC without duplicating the helper.
  */
 public class TestUtils {
 
@@ -19,6 +32,30 @@ public class TestUtils {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         byte[] digestBytes = digest.digest(content.getBytes());
         return Base64.getEncoder().encodeToString(digestBytes);
+    }
+
+    /**
+     * Generates a self-signed X.509 certificate (RSA / SHA256withRSA / BC provider)
+     * with the given subject. Validity is 365 days starting now.
+     *
+     * @param keyPair the RSA key pair (must match the algorithm here)
+     * @param subject the X.500 subject name (also used as issuer)
+     * @return a self-signed X.509 certificate
+     */
+    public static X509Certificate generateSelfSignedCert(KeyPair keyPair, X500Name subject) throws Exception {
+        Date notBefore = new Date();
+        Date notAfter = new Date(System.currentTimeMillis() + 365L * 24 * 60 * 60 * 1000);
+
+        JcaX509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(
+                subject, BigInteger.ONE, notBefore, notAfter, subject, keyPair.getPublic());
+
+        ContentSigner signer = new JcaContentSignerBuilder("SHA256withRSA")
+                .setProvider("BC")
+                .build(keyPair.getPrivate());
+
+        return new JcaX509CertificateConverter()
+                .setProvider("BC")
+                .getCertificate(builder.build(signer));
     }
     
     /**
