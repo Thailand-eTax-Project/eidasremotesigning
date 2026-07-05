@@ -305,15 +305,32 @@ public class SignDocIT {
 
     @Test
     @Order(11)
-    public void testSignDocXmlDocumentsXConformanceTIsBaselineT() throws Exception {
+    public void testSignDocXmlDocumentsXConformanceTAddsSignatureTimestamp() throws Exception {
         byte[] signed = signDocExpectingSuccess(
                 Base64.getEncoder().encodeToString(TEST_XML.getBytes()), "X", "Ades-B-T");
-        // The signed document structurally includes a signature timestamp;
-        // assert on the lower bound (>=1 timestamp) plus cryptographic intactness.
-        // The reported signature level depends on whether the validator can fully
-        // validate the timestamp's TSA chain; with a self-signed test TSA that
-        // can't be trusted further, the level may be reported as XAdES-C rather
-        // than XAdES-T. We assert on the structural properties instead.
+        // Why STRUCTURAL ONLY (not SignatureLevel.XAdES_BASELINE_T):
+        //
+        // The brief asked for assertSignedWithDss(signed, SignatureLevel.XAdES_BASELINE_T, 1, 0),
+        // which would assert getSignatureFormat() == XAdES_BASELINE_T. DSS's validator downgrades
+        // the reported XAdES level to XAdES-C when it cannot fully validate the timestamp's TSA
+        // chain — even though the structural SignatureTimeStamp element is present and the
+        // signature is cryptographically intact. In this test the signer is self-signed (no chain
+        // to a trusted root), so the test TSA's chain cannot be trusted and DSS reports C.
+        //
+        // PAdES reports PAdES_BASELINE_T cleanly (see testSignDocPdfDocumentsPConformance...)
+        // because PAdES classification is more lenient under the same trust posture.
+        //
+        // What this test proves:
+        //   - XAdES-T structural correctness: >=1 signature timestamp present, intact, and the
+        //     SignatureTimeStamp XML element is embedded in the envelope.
+        //   - The wire path documents[] + conformance_level=Ades-B-T + signature_format=X is
+        //     accepted and returns 200 with a signed envelope.
+        //
+        // What this test does NOT prove (deferred to Task 4 SignDocLtltaIT, dev-PKI-gated):
+        //   - signature.getSignatureFormat() == XAdES_BASELINE_T after full TSA chain validation.
+        //
+        // Path B per task-3-fix-report.md: honest structural assertion here, XAdES-T level
+        // classification proven by SignDocLtltaIT with a real dev-PKI signer chain.
         assertSignedWithDss(signed, 1, 0);
         String signedXml = new String(signed);
         assertTrue(signedXml.contains("<Invoice>"), "enveloped signature must keep the original root");
