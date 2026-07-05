@@ -47,6 +47,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -133,7 +134,7 @@ class SignDocLtltaIT {
     void pdf_pades_lt() throws Exception {
         assumeDevPkiUp();
         byte[] pdfBytes = loadPdf();
-        runAndAssert(this, Base64.getEncoder().encodeToString(pdfBytes), "P",
+        runAndAssert(Base64.getEncoder().encodeToString(pdfBytes), "P",
                 "Ades-B-LT", SignatureLevel.PAdES_BASELINE_LT, 1, 0);
     }
 
@@ -141,21 +142,21 @@ class SignDocLtltaIT {
     void pdf_pades_lta() throws Exception {
         assumeDevPkiUp();
         byte[] pdfBytes = loadPdf();
-        runAndAssert(this, Base64.getEncoder().encodeToString(pdfBytes), "P",
+        runAndAssert(Base64.getEncoder().encodeToString(pdfBytes), "P",
                 "Ades-B-LTA", SignatureLevel.PAdES_BASELINE_LTA, 1, 1);
     }
 
     @Test
     void xml_xades_lt() throws Exception {
         assumeDevPkiUp();
-        runAndAssert(this, Base64.getEncoder().encodeToString(TEST_XML.getBytes()), "X",
+        runAndAssert(Base64.getEncoder().encodeToString(TEST_XML.getBytes()), "X",
                 "Ades-B-LT", SignatureLevel.XAdES_BASELINE_LT, 1, 0);
     }
 
     @Test
     void xml_xades_lta() throws Exception {
         assumeDevPkiUp();
-        runAndAssert(this, Base64.getEncoder().encodeToString(TEST_XML.getBytes()), "X",
+        runAndAssert(Base64.getEncoder().encodeToString(TEST_XML.getBytes()), "X",
                 "Ades-B-LTA", SignatureLevel.XAdES_BASELINE_LTA, 1, 1);
     }
 
@@ -168,17 +169,14 @@ class SignDocLtltaIT {
      * dev-PKI root via the production {@code CommonCertificateVerifier} bean,
      * which loads {@code app.dss.truststore.path} at startup).
      *
-     * <p>Static on purpose (per the brief): each invocation runs the full flow
-     * end-to-end with fresh state, so the four cases are independent — no shared
-     * {@code static} credential leaks across methods.
-     *
-     * <p>The {@code it} parameter threads in the {@code @Autowired} collaborators
-     * without dragging the call site through a Spring-managed lifecycle.
+     * <p>All flow state is method-local, so each invocation runs the full flow
+     * end-to-end with fresh state and the four cases stay independent — no
+     * shared credential leaks across methods.
      */
-    private static void runAndAssert(SignDocLtltaIT it, String documentBase64,
-                                     String signatureFormat, String conformanceLevel,
-                                     SignatureLevel expectedLevel,
-                                     int minSignatureTimestamps, int minArchiveTimestamps)
+    private void runAndAssert(String documentBase64,
+                              String signatureFormat, String conformanceLevel,
+                              SignatureLevel expectedLevel,
+                              int minSignatureTimestamps, int minArchiveTimestamps)
             throws Exception {
 
         // 1) register a fresh client
@@ -186,31 +184,31 @@ class SignDocLtltaIT {
         reg.setClientName("LT/LTA IT Client (" + conformanceLevel + ")");
         reg.setScopes(Set.of("signing"));
         reg.setGrantTypes(Set.of("client_credentials"));
-        MvcResult regResult = it.mockMvc.perform(MockMvcRequestBuilders
+        MvcResult regResult = mockMvc.perform(MockMvcRequestBuilders
                 .post("/client-registration")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(it.objectMapper.writeValueAsString(reg)))
+                .content(objectMapper.writeValueAsString(reg)))
                 .andExpect(status().isCreated())
                 .andReturn();
-        JsonNode regJson = it.objectMapper.readTree(regResult.getResponse().getContentAsString());
+        JsonNode regJson = objectMapper.readTree(regResult.getResponse().getContentAsString());
         String clientId = regJson.get("clientId").asText();
         String clientSecret = regJson.get("clientSecret").asText();
 
         // 2) mint an access token
         String encodedAuth = java.util.Base64.getEncoder().encodeToString(
                 (clientId + ":" + clientSecret).getBytes(StandardCharsets.UTF_8));
-        MvcResult tokenResult = it.mockMvc.perform(MockMvcRequestBuilders
+        MvcResult tokenResult = mockMvc.perform(MockMvcRequestBuilders
                 .post("/oauth2/token")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED_VALUE)
                 .header("Authorization", "Basic " + encodedAuth)
                 .content("grant_type=client_credentials&scope=signing"))
                 .andExpect(status().isOk())
                 .andReturn();
-        String accessToken = it.objectMapper.readTree(tokenResult.getResponse().getContentAsString())
+        String accessToken = objectMapper.readTree(tokenResult.getResponse().getContentAsString())
                 .get("access_token").asText();
 
         // 3) seed a BCFKS credential with the dev-PKI chain.pem
-        String credentialId = seedDevPkiCredential(it, clientId);
+        String credentialId = seedDevPkiCredential(clientId);
 
         // 4) authorize with PIN in authData[]
         CSCAuthorizeRequest authorize = CSCAuthorizeRequest.builder()
@@ -221,14 +219,14 @@ class SignDocLtltaIT {
                         .value(KEYSTORE_PASSWORD)
                         .build()))
                 .build();
-        MvcResult authResult = it.mockMvc.perform(MockMvcRequestBuilders
+        MvcResult authResult = mockMvc.perform(MockMvcRequestBuilders
                 .post("/csc/v2/credentials/authorize")
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Authorization", "Bearer " + accessToken)
-                .content(it.objectMapper.writeValueAsString(authorize)))
+                .content(objectMapper.writeValueAsString(authorize)))
                 .andExpect(status().isOk())
                 .andReturn();
-        String sad = it.objectMapper.readTree(authResult.getResponse().getContentAsString())
+        String sad = objectMapper.readTree(authResult.getResponse().getContentAsString())
                 .get("SAD").asText();
 
         // 5) signDoc with documents[] + signature_format + conformance_level
@@ -245,17 +243,17 @@ class SignDocLtltaIT {
                 .documents(List.of(entry))
                 .build();
 
-        MvcResult signResult = it.mockMvc.perform(MockMvcRequestBuilders
+        MvcResult signResult = mockMvc.perform(MockMvcRequestBuilders
                 .post("/csc/v2/signatures/signDoc")
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Authorization", "Bearer " + accessToken)
-                .content(it.objectMapper.writeValueAsString(req)))
+                .content(objectMapper.writeValueAsString(req)))
                 .andReturn();
 
         assertEquals(200, signResult.getResponse().getStatus(),
                 "signDoc must succeed at " + conformanceLevel + "; body: "
                         + signResult.getResponse().getContentAsString());
-        JsonNode body = it.objectMapper.readTree(signResult.getResponse().getContentAsString());
+        JsonNode body = objectMapper.readTree(signResult.getResponse().getContentAsString());
         JsonNode docs = body.get("DocumentWithSignature");
         assertNotNull(docs, "DocumentWithSignature must be present");
         assertEquals(1, docs.size(), "exactly one signed document expected");
@@ -264,7 +262,7 @@ class SignDocLtltaIT {
         // 6) validate via DSS: level + intact + timestamp floors
         SignedDocumentValidator validator =
                 SignedDocumentValidator.fromDocument(new InMemoryDocument(signedBytes));
-        validator.setCertificateVerifier(it.testCertificateVerifier);
+        validator.setCertificateVerifier(testCertificateVerifier);
         Reports reports = validator.validateDocument();
         DiagnosticData diag = reports.getDiagnosticData();
 
@@ -278,6 +276,11 @@ class SignDocLtltaIT {
                         + "(the spec gap Task 3 deferred; this is the closure)");
         assertTrue(sig.isSignatureIntact(),
                 label + " — signature must be cryptographically intact");
+        // Explicit revocation-material check (spec: "revocation/validation material
+        // present in the diagnostic") — don't rely only on DSS's level classification
+        // implying it.
+        assertFalse(diag.getAllRevocationData().isEmpty(),
+                label + " — LT/LTA must embed revocation data (CRL/OCSP) for the chain");
         assertTrue(sig.getSignatureTimestamps().size() >= minSignatureTimestamps,
                 label + " — expected >= " + minSignatureTimestamps
                         + " signature timestamp(s), got " + sig.getSignatureTimestamps().size());
@@ -309,7 +312,7 @@ class SignDocLtltaIT {
      * and registers the credential against {@code clientId}. Returns the
      * persisted credential's ID.
      */
-    private static String seedDevPkiCredential(SignDocLtltaIT it, String clientId) throws Exception {
+    private String seedDevPkiCredential(String clientId) throws Exception {
         Path chainPem = Path.of("dev-pki", "out", "signer", "chain.pem");
         Path signerKey = Path.of("dev-pki", "out", "signer", "signer.key");
         if (!Files.isRegularFile(chainPem) || !Files.isRegularFile(signerKey)) {
@@ -322,7 +325,7 @@ class SignDocLtltaIT {
         PrivateKey priv = readPrivateKeyFromPem(signerKey);
         Certificate[] chainAsCert = chain;
 
-        String keystorePath = it.bcfksService.createKeystore(
+        String keystorePath = bcfksService.createKeystore(
                 KEYSTORE_ALIAS, priv, chainAsCert, KEYSTORE_PASSWORD);
 
         SigningCertificate cert = SigningCertificate.builder()
@@ -335,8 +338,8 @@ class SignDocLtltaIT {
                 .clientId(clientId)
                 .createdAt(Instant.now())
                 .build();
-        it.signingCertificateRepository.save(cert);
-        assertTrue(it.signingCertificateRepository.existsById(cert.getId()));
+        signingCertificateRepository.save(cert);
+        assertTrue(signingCertificateRepository.existsById(cert.getId()));
         return cert.getId();
     }
 

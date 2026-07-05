@@ -28,6 +28,7 @@ import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 import java.util.Date;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.bouncycastle.asn1.x500.X500Name;
 
@@ -45,6 +46,7 @@ import org.bouncycastle.asn1.x500.X500Name;
 public class TestTSPSource implements TSPSource {
 
     private static final String TSA_POLICY_OID = "1.2.3.4.1";
+    private static final AtomicLong TIMESTAMP_SERIAL = new AtomicLong();
 
     private final PrivateKey tsaKey;
     private final X509Certificate tsaCert;
@@ -104,7 +106,11 @@ public class TestTSPSource implements TSPSource {
             TimeStampRequestGenerator reqGen = new TimeStampRequestGenerator();
             reqGen.setReqPolicy(new ASN1ObjectIdentifier(TSA_POLICY_OID));
             var request = reqGen.generate(bcAlgo, digest, BigInteger.valueOf(System.nanoTime()));
-            var response = responseGenerator.generate(request, BigInteger.ONE, new Date());
+            // RFC 3161 section 2.4.2: timestamp serials must be unique per TSA. An LTA
+            // response carries >= 2 tokens from this TSA; identical serials pass DSS
+            // today but may trip a stricter validator.
+            var response = responseGenerator.generate(
+                    request, BigInteger.valueOf(TIMESTAMP_SERIAL.incrementAndGet()), new Date());
             response.validate(request);
 
             // Mirror DSS's OnlineTSPSource (eu.europa.esig.dss.service.tsp.OnlineTSPSource
