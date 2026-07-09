@@ -22,7 +22,7 @@ RUN mkdir -p /app/keystores
 EXPOSE 9000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=5 \
     CMD curl -sf http://localhost:9000/actuator/health || exit 1
 
 # Run the application
